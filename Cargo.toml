@@ -1,0 +1,29 @@
+[package]
+name = "self-devkits"
+version = "0.1.0"
+edition = "2021"
+description = "Offline native developer utilities"
+license = "MIT"
+
+[dependencies]
+regex = "1.12"
+egui-phosphor = "0.9"
+arboard = { version = "3.6", default-features = false }
+eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+egui_extras = { version = "0.31.1", features = ["syntect"] }
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
+quick-xml = "0.37"
+roxmltree = "0.20"
+sqlparser = "0.53"
+sqlformat = "0.3"
+rand = "0.8"
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }
+rfd = "0.15"
+
+[dev-dependencies]
+rqrr = "0.10"
+
+[profile.release]
+lto = "thin"
+strip = true
