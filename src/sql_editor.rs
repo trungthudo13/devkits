@@ -16,9 +16,9 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
     };
     let mut job = LayoutJob::default();
     let format = |color| TextFormat {
-        font_id: FontId::monospace(11.),
+        font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
         color,
-        line_height: Some(16.),
+        line_height: Some(crate::code_editor::LINE_HEIGHT),
         ..Default::default()
     };
     if text.len() > 128 * 1024 {

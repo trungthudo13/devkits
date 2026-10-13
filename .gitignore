@@ -1,3 +1,4 @@
 /target
 /dist
 /docs
+__pycache__/

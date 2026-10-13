@@ -72,7 +72,7 @@ impl RegexEditor {
         let mut job = LayoutJob::default();
         let mut previous = 0;
         let style = TextFormat {
-            font_id: FontId::monospace(13.),
+            font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
             color: if dark {
                 Color32::from_gray(225)
             } else {

@@ -31,8 +31,8 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
             text,
             0.,
             TextFormat {
-                font_id: FontId::monospace(11.),
-                line_height: Some(16.),
+                font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
+                line_height: Some(crate::code_editor::LINE_HEIGHT),
                 color: base,
                 ..Default::default()
             },
@@ -82,8 +82,8 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
             &text[start..i],
             0.,
             TextFormat {
-                font_id: FontId::monospace(11.),
-                line_height: Some(16.),
+                font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
+                line_height: Some(crate::code_editor::LINE_HEIGHT),
                 color,
                 ..Default::default()
             },
@@ -317,17 +317,19 @@ impl DevKits {
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.;
                     ui.spacing_mut().button_padding = egui::Vec2::ZERO;
-                    ui.spacing_mut().interact_size.y = 16.;
+                    ui.spacing_mut().interact_size.y = crate::code_editor::LINE_HEIGHT;
                     for row in rows {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.;
-                            let (number_rect, _) =
-                                ui.allocate_exact_size(egui::vec2(32., 16.), egui::Sense::hover());
+                            let (number_rect, _) = ui.allocate_exact_size(
+                                egui::vec2(32., crate::code_editor::LINE_HEIGHT),
+                                egui::Sense::hover(),
+                            );
                             ui.painter().text(
                                 egui::pos2(number_rect.right(), number_rect.top() + 1.),
                                 egui::Align2::RIGHT_TOP,
                                 (row + 1).to_string(),
-                                FontId::monospace(11.),
+                                FontId::monospace(crate::code_editor::FONT_SIZE),
                                 if self.dark {
                                     Color32::from_rgb(135, 180, 220)
                                 } else {
@@ -338,7 +340,7 @@ impl DevKits {
                                 let folded = self.json_collapsed.contains(&row);
                                 if ui
                                     .add_sized(
-                                        [16., 16.],
+                                        [16., crate::code_editor::LINE_HEIGHT],
                                         egui::Button::new(if folded {
                                             icons::CARET_RIGHT
                                         } else {

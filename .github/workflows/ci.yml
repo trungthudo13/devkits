@@ -1,29 +1,105 @@
-name: Native builds
-on: [push, pull_request, workflow_dispatch]
+name: Build and release DevKits
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devkits-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
-  test-build:
+  build:
+    name: ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-22.04
+            label: Linux-amd64
+            rustflags: ''
+          - os: windows-2022
+            label: Windows-x64
+            rustflags: '-C target-feature=+crt-static'
+          - os: macos-15
+            label: macOS-arm64
+            rustflags: ''
+          - os: macos-15-intel
+            label: macOS-x64
+            rustflags: ''
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Linux dependencies
+        with:
+          key: ${{ matrix.label }}
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgl1-mesa-dev poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-vie binutils
+      - name: Install macOS PDF and OCR tools
+        if: runner.os == 'macOS'
+        run: brew install poppler tesseract
+      - name: Install Windows installer compiler
+        if: runner.os == 'Windows'
+        run: choco install nsis --yes --no-progress
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
-      - run: cargo build --release --locked
-      - run: python scripts/package.py
+      - run: python -m unittest discover -s tests -p 'test_*.py'
+      - run: cargo build --release --locked --bin self-devkits
+      - name: Create native installer and checksum
+        run: python scripts/package.py
+      - name: Verify Debian package
+        if: runner.os == 'Linux'
+        run: dpkg-deb --info dist/*.deb && dpkg-deb --contents dist/*.deb
       - uses: actions/upload-artifact@v4
         with:
-          name: self-devkits-${{ runner.os }}-${{ runner.arch }}
+          name: DevKits-${{ matrix.label }}
+          if-no-files-found: error
+          retention-days: 30
           path: |
-            dist/*.tar.gz
-            dist/*.zip
+            dist/*.deb
+            dist/*-setup.exe
+            dist/*.dmg
+            dist/*.sha256
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: DevKits-*
+          path: installers
+          merge-multiple: true
+      - name: Publish installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" installers/* --clobber
+          else
+            gh release create "$RELEASE_TAG" installers/* --title "DevKits $RELEASE_TAG" --generate-notes
+          fi

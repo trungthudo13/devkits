@@ -5,8 +5,10 @@ mod code_editor;
 #[cfg(any(target_os = "linux", test))]
 mod ime;
 mod json_editor;
+mod pdf_editor;
 mod regex_editor;
 mod sql_editor;
+mod window_chrome;
 mod xml_editor;
 use self_devkits::{Action, Language, PasswordOptions, SqlDialect};
 
@@ -18,15 +20,17 @@ enum Tool {
     Password,
     Qr,
     Regex,
+    Pdf,
 }
 impl Tool {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Json,
         Self::Sql,
         Self::Xml,
         Self::Regex,
         Self::Password,
         Self::Qr,
+        Self::Pdf,
     ];
     fn title(self) -> &'static str {
         match self {
@@ -36,6 +40,7 @@ impl Tool {
             Self::Password => "Random Password",
             Self::Qr => "QR Generator",
             Self::Regex => "Regex Editor",
+            Self::Pdf => "PDF Extraction",
         }
     }
     fn lang(self) -> Option<Language> {
@@ -68,6 +73,7 @@ struct DevKits {
     ime: ime::LinuxIme,
     search: String,
     regex: regex_editor::RegexEditor,
+    pdf: pdf_editor::PdfEditor,
     json_simple: bool,
     json_collapsed: std::collections::BTreeSet<usize>,
     sidebar_open: bool,
@@ -98,6 +104,7 @@ impl Default for DevKits {
             ime: ime::LinuxIme::default(),
             search: String::new(),
             regex: regex_editor::RegexEditor::default(),
+            pdf: pdf_editor::PdfEditor::default(),
             json_simple: false,
             json_collapsed: std::collections::BTreeSet::new(),
             sidebar_open: true,
@@ -143,8 +150,10 @@ fn theme(ctx: &egui::Context, dark: bool) {
             .insert(egui::TextStyle::Body, egui::FontId::proportional(13.));
         s.text_styles
             .insert(egui::TextStyle::Button, egui::FontId::proportional(13.));
-        s.text_styles
-            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.));
+        s.text_styles.insert(
+            egui::TextStyle::Monospace,
+            egui::FontId::monospace(crate::code_editor::FONT_SIZE),
+        );
         s.spacing.item_spacing = egui::vec2(10., 10.);
         s.spacing.button_padding = egui::vec2(12., 6.);
     });
@@ -406,6 +415,12 @@ impl eframe::App for DevKits {
                     ));
                     self.qr_image = Some(img);
                 }
+                if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("pdf") {
+                    self.tool = Tool::Pdf;
+                    if let Some(path) = std::env::var_os("DEVKITS_CAPTURE_PDF") {
+                        self.pdf.preview_file(std::path::Path::new(&path), ctx);
+                    }
+                }
                 if std::env::var("DEVKITS_CAPTURE_DARK").is_ok() {
                     self.dark = true;
                     theme(ctx, true);
@@ -428,6 +443,7 @@ impl eframe::App for DevKits {
                 }
             }
         }
+        self.window_title_bar(ctx);
         if self.sidebar_open {
             egui::SidePanel::left("sidebar")
                 .resizable(false)
@@ -470,6 +486,7 @@ impl eframe::App for DevKits {
                             Tool::Password => icons::KEY,
                             Tool::Qr => icons::QR_CODE,
                             Tool::Regex => icons::ASTERISK,
+                            Tool::Pdf => icons::FILE_PDF,
                         };
                         let response = ui
                             .allocate_ui_with_layout(
@@ -496,58 +513,6 @@ impl eframe::App for DevKits {
                     });
                 });
         }
-        egui::TopBottomPanel::top("title")
-            .frame(
-                egui::Frame::new()
-                    .fill(ctx.style().visuals.panel_fill)
-                    .inner_margin(egui::Margin::symmetric(8, 3)),
-            )
-            .show(ctx, |ui| {
-                ui.spacing_mut().button_padding = egui::vec2(4., 2.);
-                ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-                ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(icons::SIDEBAR)
-                        .on_hover_text("Toggle sidebar")
-                        .clicked()
-                    {
-                        self.sidebar_open = !self.sidebar_open;
-                    }
-                    let title_rect = ui.available_rect_before_wrap();
-                    ui.painter().text(
-                        egui::pos2(title_rect.center().x - 35., title_rect.center().y),
-                        egui::Align2::CENTER_CENTER,
-                        self.tool.title(),
-                        egui::FontId::proportional(13.),
-                        ui.visuals().text_color(),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .selectable_label(self.pinned, icons::PUSH_PIN)
-                            .on_hover_text("Always on top")
-                            .clicked()
-                        {
-                            self.pinned = !self.pinned;
-                            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-                                if self.pinned {
-                                    egui::WindowLevel::AlwaysOnTop
-                                } else {
-                                    egui::WindowLevel::Normal
-                                },
-                            ));
-                        }
-                        if ui
-                            .button(icons::SUN)
-                            .on_hover_text("Toggle light / dark theme")
-                            .clicked()
-                        {
-                            self.dark = !self.dark;
-                            theme(ctx, self.dark);
-                        }
-                    });
-                });
-            });
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -565,14 +530,18 @@ impl eframe::App for DevKits {
                 Tool::Password => self.password_ui(ui),
                 Tool::Qr => self.qr_ui(ui),
                 Tool::Regex => self.regex.ui(ui),
+                Tool::Pdf => self.pdf.ui(ui),
             });
+        window_chrome::resize_edges(ctx);
     }
 }
 fn main() -> eframe::Result {
     eframe::run_native(
-        "Self DevKits",
+        "DevKits",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
+                .with_decorations(false)
+                .with_app_id("devkits")
                 .with_inner_size(
                     if cfg!(debug_assertions) && std::env::var_os("DEVKITS_CAPTURE_SMALL").is_some()
                     {
@@ -586,6 +555,25 @@ fn main() -> eframe::Result {
         },
         Box::new(|cc| {
             let mut fonts = egui::FontDefinitions::default();
+            fonts.font_data.insert(
+                "Noto Sans Mono".into(),
+                egui::FontData::from_static(include_bytes!(
+                    "../assets/fonts/noto-sans-mono/NotoSansMono-Regular.ttf"
+                ))
+                .into(),
+            );
+            // Keep egui's fallback fonts for glyphs outside Noto Sans Mono's coverage.
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .insert(0, "Noto Sans Mono".into());
+            // Keep UI typography, but cover Vietnamese characters missing from Ubuntu Light.
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push("Noto Sans Mono".into());
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
             cc.egui_ctx.set_fonts(fonts);
             theme(&cc.egui_ctx, false);

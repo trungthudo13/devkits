@@ -1,3 +1,5 @@
+mod pdf_captions;
+pub mod pdf_tools;
 pub mod regex_tools;
 use rand::{rngs::OsRng, seq::SliceRandom, Rng};
 use sqlparser::{

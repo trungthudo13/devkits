@@ -46,8 +46,8 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
             s,
             0.,
             TextFormat {
-                font_id: FontId::monospace(11.),
-                line_height: Some(16.),
+                font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
+                line_height: Some(crate::code_editor::LINE_HEIGHT),
                 color,
                 ..Default::default()
             },

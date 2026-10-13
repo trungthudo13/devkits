@@ -1,5 +1,8 @@
 use eframe::egui::{self, text::LayoutJob, Color32, FontId, Stroke};
 
+pub const FONT_SIZE: f32 = 14.;
+pub const LINE_HEIGHT: f32 = 20.;
+
 pub fn code_editor(
     ui: &mut egui::Ui,
     text: &mut String,
@@ -41,16 +44,33 @@ pub fn editor_with_folds(
                     let job = match cached {
                         Some((old, job)) if old == key => job,
                         _ => {
-                            let job = layout(text, ui.visuals().dark_mode);
+                            let mut job = layout(text, ui.visuals().dark_mode);
+                            // Empty highlighters have no sections: specify the same font
+                            // and row height as populated code instead of egui's default.
+                            if text.is_empty() {
+                                job.append(
+                                    "",
+                                    0.,
+                                    egui::TextFormat {
+                                        font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
+                                        line_height: Some(crate::code_editor::LINE_HEIGHT),
+                                        ..Default::default()
+                                    },
+                                );
+                            }
                             ui.ctx().data_mut(|d| d.insert_temp(id, (key, job.clone())));
                             job
                         }
                     };
                     ui.fonts(|f| f.layout_job(job))
                 };
+                // Reserve paint order before TextEdit; decoration geometry is known
+                // only afterwards, but must remain beneath its text and caret.
+                let decoration_slot = ui.painter().add(egui::Shape::Noop);
+                let mut decorations = Vec::new();
                 let output = egui::TextEdit::multiline(text)
                     .id_salt((language, "source"))
-                    .font(FontId::monospace(11.))
+                    .font(FontId::monospace(crate::code_editor::FONT_SIZE))
                     .code_editor()
                     .frame(false)
                     .margin(egui::Margin::ZERO)
@@ -69,14 +89,14 @@ pub fn editor_with_folds(
                 };
                 for (index, row) in output.galley.rows.iter().enumerate() {
                     let y = output.galley_pos.y + row.rect.top();
-                    if y + 16. < ui.clip_rect().top() || y > ui.clip_rect().bottom() {
+                    if y + LINE_HEIGHT < ui.clip_rect().top() || y > ui.clip_rect().bottom() {
                         continue;
                     }
                     ui.painter().text(
                         egui::pos2(gutter.right() - 16., y + 1.),
                         egui::Align2::RIGHT_TOP,
                         (index + 1).to_string(),
-                        FontId::monospace(11.),
+                        FontId::monospace(crate::code_editor::FONT_SIZE),
                         number_color,
                     );
                 }
@@ -85,7 +105,7 @@ pub fn editor_with_folds(
                         let y = output.galley_pos.y + row.rect.top();
                         let rect = egui::Rect::from_min_size(
                             egui::pos2(gutter.right() - 15., y),
-                            egui::vec2(14., 16.),
+                            egui::vec2(14., LINE_HEIGHT),
                         );
                         if ui.clip_rect().intersects(rect)
                             && ui
@@ -106,6 +126,8 @@ pub fn editor_with_folds(
                 } else {
                     Color32::from_gray(232)
                 };
+                let character_width =
+                    ui.fonts(|f| f.glyph_width(&FontId::monospace(FONT_SIZE), ' '));
                 for (index, line) in text.lines().enumerate() {
                     let Some(row) = output.galley.rows.get(index) else {
                         break;
@@ -115,11 +137,11 @@ pub fn editor_with_folds(
                         continue;
                     }
                     for column in (0..line.chars().take_while(|c| *c == ' ').count()).step_by(2) {
-                        let x = output.galley_pos.x + column as f32 * 6.6;
-                        ui.painter().line_segment(
-                            [egui::pos2(x, y), egui::pos2(x, y + 16.)],
+                        let x = output.galley_pos.x + column as f32 * character_width;
+                        decorations.push(egui::Shape::line_segment(
+                            [egui::pos2(x, y), egui::pos2(x, y + LINE_HEIGHT)],
                             Stroke::new(1_f32, guide),
-                        );
+                        ));
                     }
                 }
                 if output.response.has_focus() {
@@ -130,17 +152,19 @@ pub fn editor_with_folds(
                                     output.galley_pos.x,
                                     output.galley_pos.y + row.rect.top(),
                                 ),
-                                egui::vec2(width - 48., 16.),
+                                egui::vec2(width - 48., LINE_HEIGHT),
                             );
-                            ui.painter().rect_stroke(
+                            decorations.push(egui::Shape::rect_stroke(
                                 rect,
                                 0.,
                                 Stroke::new(1_f32, guide),
                                 egui::StrokeKind::Inside,
-                            );
+                            ));
                         }
                     }
                 }
+                ui.painter()
+                    .set(decoration_slot, egui::Shape::Vec(decorations));
                 output.response
             })
             .inner
@@ -151,6 +175,39 @@ pub fn editor_with_folds(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn empty_editor_decorations_are_beneath_the_caret() {
+        let ctx = egui::Context::default();
+        let mut text = String::new();
+        let mut last = None;
+        for _ in 0..3 {
+            last = Some(ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let response = code_editor(ui, &mut text, "json", |_, _| LayoutJob::default());
+                    response.request_focus();
+                });
+            }));
+        }
+        let shapes = last.unwrap().shapes;
+        let decoration_index = shapes.iter().position(|s| matches!(
+            &s.shape, egui::Shape::Vec(v) if v.iter().any(|s| matches!(s, egui::Shape::Rect(_)))
+        )).expect("active row decoration");
+        let caret_index = shapes
+            .iter()
+            .rposition(|s| {
+                matches!(
+                    &s.shape, egui::Shape::LineSegment { points, .. }
+                        if points[0].x == points[1].x && points[0].y != points[1].y
+                )
+            })
+            .expect("visible vertical caret");
+        assert!(
+            decoration_index < caret_index,
+            "caret must paint over row decoration"
+        );
+        assert!(text.is_empty(), "placeholder is not document content");
+    }
+
     #[test]
     fn clicking_fold_gutter_keeps_source_intact() {
         let ctx = egui::Context::default();
@@ -192,7 +249,7 @@ mod tests {
                             |text, _| {
                                 LayoutJob::simple(
                                     text.into(),
-                                    FontId::monospace(11.),
+                                    FontId::monospace(crate::code_editor::FONT_SIZE),
                                     Color32::WHITE,
                                     f32::INFINITY,
                                 )
