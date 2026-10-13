@@ -176,14 +176,11 @@ impl DevKits {
                 if compact {
                     ui.end_row();
                 }
-                ui.add_sized(
-                    [50., 28.],
-                    egui::Checkbox::new(&mut self.sql_alias_align, "Alias\nalign"),
-                );
-                ui.add_sized(
-                    [86., 28.],
-                    egui::Checkbox::new(&mut self.sql_uppercase, "Keyword\nuppercase"),
-                );
+                let previous_wrap_mode = ui.style().wrap_mode;
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.checkbox(&mut self.sql_alias_align, "Alias align");
+                ui.checkbox(&mut self.sql_uppercase, "Keyword uppercase");
+                ui.style_mut().wrap_mode = previous_wrap_mode;
                 egui::ComboBox::from_id_salt("sql-dialect")
                     .width(78.)
                     .selected_text(match self.dialect {

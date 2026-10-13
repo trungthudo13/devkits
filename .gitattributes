@@ -1,0 +1,2 @@
+# The icon manifest hashes raw SVG bytes; keep them identical on every platform.
+*.svg text eol=lf

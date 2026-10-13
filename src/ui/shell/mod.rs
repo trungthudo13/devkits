@@ -75,6 +75,8 @@ mod tests {
                 };
                 let header_label = if tool == Tool::Json {
                     format!("{} Format", icons::BRACKETS_CURLY)
+                } else if tool == Tool::Xml {
+                    format!("{} Format", icons::CODE)
                 } else if tool == Tool::Sql {
                     format!("{} Beautify", icons::BRACKETS_CURLY)
                 } else if tool == Tool::Regex {

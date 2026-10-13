@@ -100,67 +100,77 @@ impl DevKits {
             }
         }
     }
-    pub fn xml_ui(&mut self, ui: &mut egui::Ui) {
-        ui.spacing_mut().item_spacing = egui::vec2(8., 8.);
+    pub fn xml_toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.spacing_mut().item_spacing = egui::vec2(6., 8.);
         ui.spacing_mut().button_padding = egui::vec2(9., 4.);
         for style in [egui::TextStyle::Body, egui::TextStyle::Button] {
             ui.style_mut()
                 .text_styles
-                .insert(style, FontId::proportional(11.));
+                .insert(style, FontId::proportional(14.));
         }
 
-        ui.horizontal_wrapped(|ui| {
-            egui::ComboBox::from_id_salt("xml-indent")
-                .width(85.)
-                .selected_text(format!("{} spaces", self.indent))
-                .show_ui(ui, |ui| {
-                    for n in [2, 4, 8] {
-                        ui.selectable_value(&mut self.indent, n, format!("{n} spaces"));
-                    }
-                });
-            if ui.button(format!("{} Example", icons::FLASK)).clicked() {
-                self.docs[1].input = EXAMPLE.into();
-                self.xml_action(Action::Format);
-            }
-            if ui
-                .button(format!("{} Clipboard", icons::CLIPBOARD))
-                .on_hover_text("Paste XML from the system clipboard")
-                .clicked()
-            {
-                match desktop::clipboard_text() {
-                    Ok(text) if text.len() <= business::MAX_INPUT => {
-                        self.docs[1] = Document {
-                            input: text,
-                            ..Default::default()
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+            egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
+            |ui| {
+                if ui
+                    .add(design::button(
+                        format!("{} Format", icons::CODE),
+                        design::colors(ui).primary,
+                    ))
+                    .on_hover_text("Ctrl/Cmd + Enter")
+                    .clicked()
+                {
+                    self.xml_action(Action::Format);
+                }
+                if ui
+                    .button(format!("{} Compress", icons::ARROWS_IN))
+                    .clicked()
+                {
+                    self.xml_action(Action::Minify);
+                }
+                if ui.button("Validate").clicked() {
+                    self.xml_action(Action::Lint);
+                }
+                if ui
+                    .button(format!("{} Clipboard", icons::CLIPBOARD))
+                    .on_hover_text("Paste XML from the system clipboard")
+                    .clicked()
+                {
+                    match desktop::clipboard_text() {
+                        Ok(text) if text.len() <= business::MAX_INPUT => {
+                            self.docs[1] = Document {
+                                input: text,
+                                ..Default::default()
+                            }
+                        }
+                        Ok(_) => {
+                            self.docs[1].error = true;
+                            self.docs[1].message = "Clipboard exceeds the 2 MiB limit.".into();
+                        }
+                        Err(e) => {
+                            self.docs[1].error = true;
+                            self.docs[1].message = format!("Cannot read clipboard: {e}");
                         }
                     }
-                    Ok(_) => {
-                        self.docs[1].error = true;
-                        self.docs[1].message = "Clipboard exceeds the 2 MiB limit.".into();
-                    }
-                    Err(e) => {
-                        self.docs[1].error = true;
-                        self.docs[1].message = format!("Cannot read clipboard: {e}");
-                    }
                 }
-            }
-            if ui.button("Validate").clicked() {
-                self.xml_action(Action::Lint);
-            }
-            if ui
-                .button(format!("{} Compress", icons::ARROWS_IN))
-                .clicked()
-            {
-                self.xml_action(Action::Minify);
-            }
-            if ui
-                .button(format!("{} Format", icons::CODE))
-                .on_hover_text("Ctrl/Cmd + Enter")
-                .clicked()
-            {
-                self.xml_action(Action::Format);
-            }
-        });
+                if ui.button(format!("{} Example", icons::FLASK)).clicked() {
+                    self.docs[1].input = EXAMPLE.into();
+                    self.xml_action(Action::Format);
+                }
+                egui::ComboBox::from_id_salt("xml-indent")
+                    .width(85.)
+                    .selected_text(format!("{} spaces", self.indent))
+                    .show_ui(ui, |ui| {
+                        for n in [2, 4, 8] {
+                            ui.selectable_value(&mut self.indent, n, format!("{n} spaces"));
+                        }
+                    });
+            },
+        );
+    }
+
+    pub fn xml_ui(&mut self, ui: &mut egui::Ui) {
         if !self.docs[1].message.is_empty() {
             design::notice(
                 ui,

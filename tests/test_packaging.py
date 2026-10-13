@@ -20,6 +20,31 @@ spec.loader.exec_module(package)
 
 
 class PackagingTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("git"), "Git required to check Windows checkout behavior")
+    def test_icon_checksums_survive_autocrlf_checkout(self):
+        manifest = json.loads((ROOT / "assets/icons/manifest.json").read_text())
+        with tempfile.TemporaryDirectory() as temp:
+            checkout = Path(temp)
+            paths = list(manifest)
+            if (ROOT / ".gitattributes").is_file():
+                paths.append(".gitattributes")
+            for path in paths:
+                destination = checkout / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / path, destination)
+
+            def git(*args):
+                subprocess.run(["git", *args], cwd=checkout, check=True, capture_output=True)
+
+            git("init")
+            git("-c", "core.autocrlf=false", "add", ".")
+            for path in manifest:
+                (checkout / path).unlink()
+            # Reproduce the Windows runner's conversion during checkout.
+            git("-c", "core.autocrlf=true", "checkout-index", "--all", "--force")
+            for path, expected in manifest.items():
+                self.assertEqual(hashlib.sha256((checkout / path).read_bytes()).hexdigest(), expected, path)
+
     def test_generated_icons_match_source_manifest_and_native_formats(self):
         manifest = json.loads((ROOT / "assets/icons/manifest.json").read_text())
         for path, expected in manifest.items():
