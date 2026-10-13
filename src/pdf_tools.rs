@@ -21,12 +21,14 @@ impl Workspace {
     fn new(parent: &Path, prefix: &str) -> PdfResult<Self> {
         for _ in 0..10 {
             let path = parent.join(format!("{prefix}-{:016x}", rand::random::<u64>()));
-            let mut builder = fs::DirBuilder::new();
+            let builder = fs::DirBuilder::new();
             #[cfg(unix)]
-            {
+            let builder = {
                 use std::os::unix::fs::DirBuilderExt;
+                let mut builder = builder;
                 builder.mode(0o700);
-            }
+                builder
+            };
             match builder.create(&path) {
                 Ok(()) => return Ok(Self(path)),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
