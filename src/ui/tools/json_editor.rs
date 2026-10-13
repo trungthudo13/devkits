@@ -6,33 +6,18 @@ pub const EXAMPLE: &str = r#"{"user":{"id":123,"name":"John Doe","email":"john.d
 
 fn layout(text: &str, dark: bool) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let base = if dark {
-        Color32::from_gray(220)
-    } else {
-        Color32::from_rgb(25, 25, 30)
-    };
-    let key = if dark {
-        Color32::from_rgb(245, 145, 145)
-    } else {
-        Color32::from_rgb(175, 20, 20)
-    };
-    let string = if dark {
-        Color32::from_rgb(135, 175, 255)
-    } else {
-        Color32::from_rgb(0, 65, 160)
-    };
-    let value = if dark {
-        Color32::from_rgb(120, 210, 160)
-    } else {
-        Color32::from_rgb(0, 125, 76)
-    };
+    let colors = design::palette(dark);
+    let base = colors.text;
+    let key = colors.primary.text;
+    let string = colors.success.text;
+    let value = colors.warning.text;
     if text.len() > 128 * 1024 {
         job.append(
             text,
             0.,
             TextFormat {
-                font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
-                line_height: Some(crate::code_editor::LINE_HEIGHT),
+                font_id: FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
+                line_height: Some(crate::ui::components::code_editor::LINE_HEIGHT),
                 color: base,
                 ..Default::default()
             },
@@ -82,8 +67,8 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
             &text[start..i],
             0.,
             TextFormat {
-                font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
-                line_height: Some(crate::code_editor::LINE_HEIGHT),
+                font_id: FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
+                line_height: Some(crate::ui::components::code_editor::LINE_HEIGHT),
                 color,
                 ..Default::default()
             },
@@ -155,7 +140,7 @@ fn visible_rows(
 impl DevKits {
     pub fn json_action(&mut self, action: Action) {
         let doc = &mut self.docs[0];
-        match self_devkits::process(
+        match business::process(
             &doc.input,
             Language::Json,
             action,
@@ -181,16 +166,7 @@ impl DevKits {
     }
     fn json_escape(&mut self, remove: bool) {
         let doc = &mut self.docs[0];
-        if doc.input.len() > self_devkits::MAX_INPUT {
-            doc.error = true;
-            doc.message = "Input exceeds the 2 MiB limit.".into();
-            return;
-        }
-        let result = if remove {
-            serde_json::from_str::<String>(&doc.input)
-        } else {
-            serde_json::to_string(&doc.input)
-        };
+        let result = business::documents::json_escape(&doc.input, remove);
         match result {
             Ok(text) => {
                 doc.input = text;
@@ -200,94 +176,99 @@ impl DevKits {
             }
             Err(e) => {
                 doc.error = true;
-                doc.message = format!("Expected a JSON-quoted string: {e}");
+                doc.message = e;
             }
         }
     }
-    pub fn json_ui(&mut self, ui: &mut egui::Ui) {
+    pub fn json_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing = egui::vec2(8., 8.);
         ui.spacing_mut().button_padding = egui::vec2(9., 4.);
         for style in [egui::TextStyle::Body, egui::TextStyle::Button] {
             ui.style_mut()
                 .text_styles
-                .insert(style, FontId::proportional(11.));
+                .insert(style, FontId::proportional(14.));
         }
-        if !self.dark {
-            ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::from_rgb(239, 238, 244);
-            ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
-            ui.visuals_mut().widgets.inactive.corner_radius = egui::CornerRadius::same(1);
-        }
-        ui.horizontal_wrapped(|ui| {
-            // Align the compact toolbar to the right at normal window widths.
-            ui.add_space((ui.available_width() - 494.).max(0.));
-            if ui
-                .add(
-                    egui::Button::new(format!("{} Simple", icons::BOOKMARK_SIMPLE))
-                        .selected(self.json_simple),
-                )
-                .on_hover_text("Simple editor: hide fold controls")
-                .clicked()
-            {
-                self.json_simple = !self.json_simple;
-                self.json_collapsed.clear();
-            }
-            if ui
-                .button(format!("{} Remove Escape", icons::ARROWS_OUT))
-                .on_hover_text("Decode a JSON-quoted string")
-                .clicked()
-            {
-                self.json_escape(true);
-            }
-            if ui
-                .button(format!("{} Escape", icons::ARROWS_IN))
-                .on_hover_text("Encode the editor text as a JSON string")
-                .clicked()
-            {
-                self.json_escape(false);
-            }
-            if ui
-                .button(format!("{} Clipboard", icons::CLIPBOARD))
-                .on_hover_text("Paste from system clipboard")
-                .clicked()
-            {
-                match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                    Ok(text) if text.len() <= self_devkits::MAX_INPUT => {
-                        self.docs[0] = Document {
-                            input: text,
-                            ..Default::default()
-                        };
-                        self.json_collapsed.clear();
-                    }
-                    Ok(_) => {
-                        self.docs[0].error = true;
-                        self.docs[0].message = "Clipboard exceeds the 2 MiB limit.".into();
-                    }
-                    Err(e) => {
-                        self.docs[0].error = true;
-                        self.docs[0].message = format!("Cannot read clipboard: {e}");
+
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+            egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
+            |ui| {
+                if ui
+                    .add(design::button(
+                        format!("{} Format", icons::BRACKETS_CURLY),
+                        design::colors(ui).primary,
+                    ))
+                    .on_hover_text("Ctrl/Cmd + Enter")
+                    .clicked()
+                {
+                    self.json_action(Action::Format);
+                }
+                if ui
+                    .button(format!("{} Compress", icons::ARROWS_IN))
+                    .clicked()
+                {
+                    self.json_action(Action::Minify);
+                }
+                if ui
+                    .button(format!("{} Clipboard", icons::CLIPBOARD))
+                    .on_hover_text("Paste from system clipboard")
+                    .clicked()
+                {
+                    match desktop::clipboard_text() {
+                        Ok(text) if text.len() <= business::MAX_INPUT => {
+                            self.docs[0] = Document {
+                                input: text,
+                                ..Default::default()
+                            };
+                            self.json_collapsed.clear();
+                        }
+                        Ok(_) => {
+                            self.docs[0].error = true;
+                            self.docs[0].message = "Clipboard exceeds the 2 MiB limit.".into();
+                        }
+                        Err(e) => {
+                            self.docs[0].error = true;
+                            self.docs[0].message = format!("Cannot read clipboard: {e}");
+                        }
                     }
                 }
-            }
-            if ui
-                .button(format!("{} Compress", icons::ARROWS_IN))
-                .clicked()
-            {
-                self.json_action(Action::Minify);
-            }
-            if ui
-                .button(format!("{} Format", icons::BRACKETS_CURLY))
-                .on_hover_text("Ctrl/Cmd + Enter")
-                .clicked()
-            {
-                self.json_action(Action::Format);
-            }
-        });
+                if ui
+                    .button(format!("{} Escape", icons::ARROWS_IN))
+                    .on_hover_text("Encode the editor text as a JSON string")
+                    .clicked()
+                {
+                    self.json_escape(false);
+                }
+                if ui
+                    .button(format!("{} Remove Escape", icons::ARROWS_OUT))
+                    .on_hover_text("Decode a JSON-quoted string")
+                    .clicked()
+                {
+                    self.json_escape(true);
+                }
+                if ui
+                    .add(
+                        egui::Button::new(format!("{} Simple", icons::BOOKMARK_SIMPLE))
+                            .selected(self.json_simple),
+                    )
+                    .on_hover_text("Simple editor: hide fold controls")
+                    .clicked()
+                {
+                    self.json_simple = !self.json_simple;
+                    self.json_collapsed.clear();
+                }
+            },
+        );
+    }
+
+    pub fn json_ui(&mut self, ui: &mut egui::Ui) {
         if !self.docs[0].message.is_empty() {
-            ui.colored_label(
+            design::notice(
+                ui,
                 if self.docs[0].error {
-                    Color32::from_rgb(205, 55, 55)
+                    design::colors(ui).danger
                 } else {
-                    ui.visuals().text_color()
+                    design::colors(ui).success
                 },
                 &self.docs[0].message,
             );
@@ -300,7 +281,7 @@ impl DevKits {
         self.json_collapsed
             .retain(|start| ranges.iter().any(|r| r.0 == *start));
         let response = if self.json_collapsed.is_empty() {
-            crate::code_editor::editor_with_folds(
+            crate::ui::components::code_editor::editor_with_folds(
                 ui,
                 &mut self.docs[0].input,
                 "json",
@@ -317,30 +298,27 @@ impl DevKits {
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.;
                     ui.spacing_mut().button_padding = egui::Vec2::ZERO;
-                    ui.spacing_mut().interact_size.y = crate::code_editor::LINE_HEIGHT;
+                    ui.spacing_mut().interact_size.y =
+                        crate::ui::components::code_editor::LINE_HEIGHT;
                     for row in rows {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.;
                             let (number_rect, _) = ui.allocate_exact_size(
-                                egui::vec2(32., crate::code_editor::LINE_HEIGHT),
+                                egui::vec2(32., crate::ui::components::code_editor::LINE_HEIGHT),
                                 egui::Sense::hover(),
                             );
                             ui.painter().text(
                                 egui::pos2(number_rect.right(), number_rect.top() + 1.),
                                 egui::Align2::RIGHT_TOP,
                                 (row + 1).to_string(),
-                                FontId::monospace(crate::code_editor::FONT_SIZE),
-                                if self.dark {
-                                    Color32::from_rgb(135, 180, 220)
-                                } else {
-                                    Color32::from_rgb(20, 105, 140)
-                                },
+                                FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
+                                design::colors(ui).muted,
                             );
                             if let Some(&(_, end)) = ranges.iter().find(|r| r.0 == row) {
                                 let folded = self.json_collapsed.contains(&row);
                                 if ui
                                     .add_sized(
-                                        [16., crate::code_editor::LINE_HEIGHT],
+                                        [16., crate::ui::components::code_editor::LINE_HEIGHT],
                                         egui::Button::new(if folded {
                                             icons::CARET_RIGHT
                                         } else {
@@ -418,11 +396,8 @@ impl DevKits {
                 ui.close_menu();
             }
             if ui.button("Save JSON…").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_file_name("document.json")
-                    .save_file()
-                {
-                    if let Err(e) = std::fs::write(path, &self.docs[0].input) {
+                if let Some(path) = desktop::save_file("document.json", "json") {
+                    if let Err(e) = business::documents::save_source(&path, &self.docs[0].input) {
                         self.docs[0].error = true;
                         self.docs[0].message = e.to_string();
                     }

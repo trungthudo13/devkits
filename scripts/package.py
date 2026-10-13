@@ -66,6 +66,7 @@ def windows_package(binary, stage, dist, arch):
     payload = stage / "payload"
     documents(payload)
     shutil.copy2(binary, payload / "DevKits.exe")
+    shutil.copy2(ROOT / "assets/icons/devkits.ico", payload / "devkits.ico")
     artifact = dist / f"DevKits-{VERSION}-windows-{arch}-setup.exe"
     makensis = shutil.which("makensis")
     if not makensis:
@@ -87,9 +88,11 @@ def macos_package(binary, stage, dist, arch):
     shutil.copy2(binary, app / "MacOS/DevKits")
     (app / "MacOS/DevKits").chmod(0o755)
     documents(app / "Resources")
+    shutil.copy2(ROOT / "assets/icons/devkits.icns", app / "Resources/devkits.icns")
     with (app / "Info.plist").open("wb") as handle:
         plistlib.dump({
             "CFBundleName": "DevKits", "CFBundleDisplayName": "DevKits",
+            "CFBundleIconFile": "devkits.icns",
             "CFBundleExecutable": "DevKits", "CFBundleIdentifier": "dev.devkits.desktop",
             "CFBundlePackageType": "APPL", "CFBundleShortVersionString": VERSION,
             "CFBundleVersion": VERSION, "NSHighResolutionCapable": True,

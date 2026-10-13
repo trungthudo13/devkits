@@ -1,6 +1,6 @@
 use super::*;
-use self_devkits::pdf_tools::{
-    self, ImageMode, PageImage, PdfDocument, PreparedImages, ReviewedImage,
+use self_devkits::business::pdf::{
+    self as pdf_tools, ImageMode, PageImage, PdfDocument, PreparedImages, ReviewedImage,
 };
 use std::{
     path::PathBuf,
@@ -20,7 +20,8 @@ enum Completed {
     Imported(Arc<PdfDocument>),
     Text(String),
     Exported(PathBuf, usize),
-    Images(Arc<PreparedImages>, image::RgbaImage),
+    Images(Arc<PreparedImages>, Result<image::RgbaImage, String>),
+    Regions(Vec<[u32; 4]>),
     Preview(usize, image::RgbaImage),
     Page(PageImage, image::RgbaImage),
     Languages(Vec<String>),
@@ -46,6 +47,7 @@ pub struct PdfEditor {
     region: Option<egui::Rect>,
     anchor: Option<egui::Pos2>,
     region_name: String,
+    suggestions: Vec<[u32; 4]>,
     ocr_first: usize,
     ocr_last: usize,
     language: String,
@@ -76,6 +78,7 @@ impl Default for PdfEditor {
             region: None,
             anchor: None,
             region_name: String::new(),
+            suggestions: Vec::new(),
             ocr_first: 1,
             ocr_last: 1,
             language: "eng".into(),
@@ -129,11 +132,14 @@ impl PdfEditor {
                         caption: None,
                         crop: None,
                     })?;
+                    let regions = pdf_tools::suggest_regions(&page, &self.cancel)?;
+                    eprintln!("Suggested regions on page {}: {regions:?}", page.page);
                     self.accept(Completed::Page(page, image), ctx);
+                    self.accept(Completed::Regions(regions), ctx);
                 }
                 Ok("images") => {
                     let batch = Arc::new(pdf_tools::prepare_images(&doc, &self.cancel, |_, _| {})?);
-                    let image = pdf_tools::image_preview(&batch.items[0])?;
+                    let image = pdf_tools::image_preview(&batch.items[0]);
                     self.accept(Completed::Images(batch, image), ctx);
                 }
                 _ => {
@@ -193,6 +199,7 @@ impl PdfEditor {
                 self.region = None;
                 self.anchor = None;
                 self.region_name.clear();
+                self.suggestions.clear();
                 self.message = "Choose Images to review embedded photos, Page regions for scans/collages, or Text for extraction/OCR.".into();
             }
             Completed::Text(text) => {
@@ -209,11 +216,22 @@ impl PdfEditor {
                 self.items.extend(batch.items.clone());
                 self.included.resize(self.items.len(), true);
                 self.selected = Some(first);
-                self.preview = Some(texture(ctx, image));
+                self.preview = image.as_ref().ok().map(|img| texture(ctx, img.clone()));
                 self.message = batch.warning.clone().unwrap_or_else(|| {
                     "Review suggested names and uncheck unwanted images before exporting.".into()
                 });
+                if let Err(error) = image {
+                    self.message.push_str(&format!(" First preview unavailable: {error}. Other images can still be reviewed/exported."));
+                }
                 self.staged = Some(batch);
+            }
+            Completed::Regions(regions) => {
+                self.message = if regions.is_empty() {
+                    "No separate regions found. Draw a rectangle manually; touching images and busy backgrounds may not separate.".into()
+                } else {
+                    format!("{} suggested regions. Click a numbered box to select and name it, or add all then review. Suggestions may include text or miss photos.", regions.len())
+                };
+                self.suggestions = regions;
             }
             Completed::Preview(index, image) => {
                 self.selected = Some(index);
@@ -223,6 +241,7 @@ impl PdfEditor {
             Completed::Page(page, image) => {
                 self.page = page.page;
                 self.page_image = Some(page);
+                self.suggestions.clear();
                 self.page_texture = Some(texture(ctx, image));
                 self.region = None;
                 self.anchor = None;
@@ -277,10 +296,7 @@ impl PdfEditor {
                 )
                 .clicked()
             {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("PDF", &["pdf"])
-                    .pick_file()
-                {
+                if let Some(path) = desktop::open_pdf() {
                     self.start(ui.ctx(), "Importing…", move |c, _, _| {
                         pdf_tools::import(&path, c).map(Completed::Imported)
                     });
@@ -294,7 +310,7 @@ impl PdfEditor {
                 if ui
                     .add_enabled(
                         !self.cancel.load(Ordering::Relaxed),
-                        egui::Button::new("Cancel"),
+                        design::button("Cancel", design::colors(ui).secondary),
                     )
                     .clicked()
                 {
@@ -317,11 +333,12 @@ impl PdfEditor {
             );
         }
         if !self.message.is_empty() {
-            ui.colored_label(
+            design::notice(
+                ui,
                 if self.error {
-                    Color32::from_rgb(205, 55, 55)
+                    design::colors(ui).danger
                 } else {
-                    ui.visuals().text_color()
+                    design::colors(ui).info
                 },
                 &self.message,
             );
@@ -338,7 +355,10 @@ impl PdfEditor {
         if self.document.is_none() {
             ui.heading("Images, scanned pages and text");
             ui.label("Import a PDF to preview and rename photos, select regions from scans or collages, and extract text with optional offline OCR.");
-            ui.weak("Poppler required. OCR additionally uses Tesseract. No files are uploaded.");
+            ui.colored_label(
+                crate::ui::design::colors(ui).muted,
+                "Poppler required. OCR additionally uses Tesseract. No files are uploaded.",
+            );
             return;
         }
         match self.view {
@@ -365,7 +385,7 @@ impl PdfEditor {
                         let batch = Arc::new(pdf_tools::prepare_images(&doc, c, |d, t| {
                             progress(tx, ctx, d, t)
                         })?);
-                        let image = pdf_tools::image_preview(&batch.items[0])?;
+                        let image = pdf_tools::image_preview(&batch.items[0]);
                         Ok(Completed::Images(batch, image))
                     },
                 );
@@ -374,11 +394,14 @@ impl PdfEditor {
             if ui
                 .add_enabled(
                     self.job.is_none() && count > 0,
-                    egui::Button::new(format!("Export selected ({count})…")),
+                    design::button(
+                        format!("Export selected ({count})…"),
+                        design::colors(ui).primary,
+                    ),
                 )
                 .clicked()
             {
-                if let Some(parent) = rfd::FileDialog::new().pick_folder() {
+                if let Some(parent) = desktop::folder() {
                     let items: Vec<_> = self
                         .items
                         .iter()
@@ -407,12 +430,25 @@ impl PdfEditor {
             if ui.add_enabled(!busy, egui::Button::new("None")).clicked() {
                 self.included.fill(false);
             }
+            if ui
+                .add_enabled(
+                    !busy && self.selected.is_some(),
+                    egui::Button::new("Remove selected entry"),
+                )
+                .clicked()
+            {
+                if let Some(index) = self.selected.take() {
+                    self.items.remove(index);
+                    self.included.remove(index);
+                    self.preview = None;
+                }
+            }
         });
         if self.items.is_empty() {
             ui.label("Find embedded images, or use Page regions to select photos from scans, collages and vector pages.");
             return;
         }
-        ui.weak("Names are suggestions. Edit them below; accents are removed and duplicate names get a numeric suffix on export.");
+        ui.colored_label(crate::ui::design::colors(ui).muted, "Names are suggestions. Edit them below; accents are removed and duplicate names get a numeric suffix on export.");
         let height = ui.available_height().max(100.);
         let mut picked = None;
         ui.columns(2, |columns| {
@@ -447,11 +483,14 @@ impl PdfEditor {
                                 egui::TextEdit::singleline(&mut item.name)
                                     .desired_width(f32::INFINITY),
                             );
-                            ui.weak(item.caption.as_deref().unwrap_or(if item.crop.is_some() {
-                                "Manually selected region"
-                            } else {
-                                "No unique caption — check the name"
-                            }));
+                            ui.colored_label(
+                                crate::ui::design::colors(ui).muted,
+                                item.caption.as_deref().unwrap_or(if item.crop.is_some() {
+                                    "Selected page region"
+                                } else {
+                                    "No unique caption — check the name"
+                                }),
+                            );
                             ui.separator();
                         }
                     });
@@ -465,6 +504,8 @@ impl PdfEditor {
             }
         });
         if let Some(index) = picked {
+            self.selected = Some(index);
+            self.preview = None;
             let item = self.items[index].clone();
             self.start(ui.ctx(), "Loading preview…", move |_, _, _| {
                 pdf_tools::image_preview(&item).map(|img| Completed::Preview(index, img))
@@ -506,7 +547,7 @@ impl PdfEditor {
                     .add_enabled(self.job.is_none(), egui::Button::new("Export all pages…"))
                     .clicked()
                 {
-                    if let Some(parent) = rfd::FileDialog::new().pick_folder() {
+                    if let Some(parent) = desktop::folder() {
                         let doc = self.document.as_ref().unwrap().clone();
                         let pixels = self.pixels;
                         self.start(ui.ctx(), "Exporting pages…", move |c, tx, ctx| {
@@ -525,6 +566,30 @@ impl PdfEditor {
             });
         });
         ui.horizontal_wrapped(|ui| {
+            if ui.add_enabled(self.job.is_none() && self.page_image.is_some(), egui::Button::new("Suggest image regions")).clicked() {
+                let page = self.page_image.as_ref().unwrap();
+                let page = PageImage { source: page.source.clone(), page: page.page, width: page.width, height: page.height };
+                let doc = self.document.clone();
+                self.start(ui.ctx(), "Finding separate regions…", move |c, _, _| {
+                    let _keep_alive = doc;
+                    pdf_tools::suggest_regions(&page, c).map(Completed::Regions)
+                });
+            }
+            if ui.add_enabled(self.job.is_none() && !self.suggestions.is_empty(), egui::Button::new("Add all suggestions")).clicked() {
+                if let Some(page) = &self.page_image {
+                    let mut count = 0;
+                    for (i, crop) in self.suggestions.iter().enumerate() {
+                        if self.items.iter().any(|item| item.source == page.source && item.crop == Some(*crop)) { continue; }
+                        self.items.push(ReviewedImage { source: page.source.clone(), page: page.page, name: format!("page_{:04}_region_{:03}",page.page,i+1), caption: None, crop: Some(*crop) });
+                        self.included.push(true);
+                        count += 1;
+                    }
+                    self.message = format!("Added {count} regions. Open Images & filenames to check crops, edit names and remove unwanted entries.");
+                }
+            }
+            ui.colored_label(crate::ui::design::colors(ui).muted, "Best for separate photos on a plain background.");
+        });
+        ui.horizontal_wrapped(|ui| {
             ui.add_enabled(self.job.is_none(),egui::TextEdit::singleline(&mut self.region_name).hint_text("Image name, e.g. sup_bi_do").desired_width(230.));
             if ui.add_enabled(self.job.is_none() && self.region.is_some() && !self.region_name.trim().is_empty(),egui::Button::new("Add region")).clicked() {
                 if let (Some(page),Some(rect))=(&self.page_image,self.region) {
@@ -538,18 +603,21 @@ impl PdfEditor {
             if ui.button("Clear selection").clicked() { self.region=None; self.anchor=None; }
         });
         if let (Some(texture), Some(page)) = (&self.page_texture, &self.page_image) {
-            ui.weak(format!(
-                "Viewing page {} · {} × {} px. Drag around the photo only.",
-                page.page, page.width, page.height
-            ));
-            let available = egui::vec2(ui.available_width(), ui.available_height().max(80.));
+            ui.colored_label(
+                crate::ui::design::colors(ui).muted,
+                format!(
+                    "Viewing page {} · {} × {} px. Drag around the photo only.",
+                    page.page, page.width, page.height
+                ),
+            );
+            let available = egui::vec2(ui.available_width(), ui.available_height().max(1.));
             let size = texture.size_vec2();
             let scale = (available.x / size.x).min(available.y / size.y).min(1.);
             let response = ui.add(
                 egui::Image::new(texture)
                     .fit_to_exact_size(size * scale)
                     .sense(if enabled {
-                        egui::Sense::drag()
+                        egui::Sense::click_and_drag()
                     } else {
                         egui::Sense::hover()
                     }),
@@ -560,6 +628,44 @@ impl PdfEditor {
                     ((pos.y - response.rect.top()) / response.rect.height()).clamp(0., 1.),
                 )
             };
+            for (i, crop) in self.suggestions.iter().enumerate() {
+                let a = egui::pos2(
+                    crop[0] as f32 / page.width as f32,
+                    crop[1] as f32 / page.height as f32,
+                );
+                let b = egui::pos2(
+                    (crop[0] + crop[2]) as f32 / page.width as f32,
+                    (crop[1] + crop[3]) as f32 / page.height as f32,
+                );
+                let rect = egui::Rect::from_min_max(
+                    response.rect.min + a.to_vec2() * response.rect.size(),
+                    response.rect.min + b.to_vec2() * response.rect.size(),
+                );
+                ui.painter().rect_stroke(
+                    rect,
+                    0.,
+                    egui::Stroke::new(1.5_f32, design::colors(ui).success.text),
+                    egui::StrokeKind::Inside,
+                );
+                let badge = egui::Rect::from_min_size(rect.min, egui::vec2(25., 22.));
+                ui.painter()
+                    .rect_filled(badge, 2., design::colors(ui).success.base);
+                ui.painter().text(
+                    badge.center(),
+                    egui::Align2::CENTER_CENTER,
+                    (i + 1).to_string(),
+                    egui::FontId::proportional(14.),
+                    design::colors(ui).success.on_base,
+                );
+                if response.clicked()
+                    && response
+                        .interact_pointer_pos()
+                        .is_some_and(|p| rect.contains(p))
+                {
+                    self.region = Some(egui::Rect::from_min_max(a, b));
+                    self.region_name = format!("page_{:04}_region_{:03}", page.page, i + 1);
+                }
+            }
             if response.drag_started() {
                 self.anchor = ui.input(|i| i.pointer.press_origin()).map(normalized);
                 self.region = None;
@@ -578,12 +684,12 @@ impl PdfEditor {
                 ui.painter().rect_filled(
                     rect,
                     0.,
-                    Color32::from_rgba_unmultiplied(50, 125, 240, 35),
+                    design::colors(ui).primary.base.gamma_multiply(0.14),
                 );
                 ui.painter().rect_stroke(
                     rect,
                     0.,
-                    egui::Stroke::new(2_f32, Color32::from_rgb(50, 125, 240)),
+                    egui::Stroke::new(2_f32, design::colors(ui).primary.text),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -618,12 +724,8 @@ impl PdfEditor {
                     .add_enabled(!self.text.is_empty(), egui::Button::new("Save TXT…"))
                     .clicked()
                 {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("UTF-8 text", &["txt"])
-                        .set_file_name("extracted.txt")
-                        .save_file()
-                    {
-                        match std::fs::write(&path, &self.text) {
+                    if let Some(path) = desktop::save_file("extracted.txt", "txt") {
+                        match business::documents::save_source(&path, &self.text) {
                             Ok(()) => {
                                 self.message = format!("Saved {}", path.display());
                                 self.error = false;
@@ -671,7 +773,7 @@ impl PdfEditor {
                 }
             });
         });
-        ui.weak("Offline OCR requires Tesseract and language packs (eng, vie). Review recognition errors before saving.");
+        ui.colored_label(crate::ui::design::colors(ui).muted, "Offline OCR requires Tesseract and language packs (eng, vie). Review recognition errors before saving.");
         egui::ScrollArea::both().id_salt("pdf-text").show(ui, |ui| {
             ui.add(
                 egui::TextEdit::multiline(&mut self.text)

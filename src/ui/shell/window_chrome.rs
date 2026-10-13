@@ -2,24 +2,29 @@ use super::*;
 use egui::{Align2, CursorIcon, FontId, Rect, ResizeDirection, Sense, Stroke, Vec2};
 
 impl DevKits {
-    pub fn window_title_bar(&mut self, ctx: &egui::Context) {
+    pub fn window_title_bar(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let radius = corner_radius(&ctx);
+        let colors = design::palette(self.dark);
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         egui::TopBottomPanel::top("window-title")
             .exact_height(44.)
-            .frame(egui::Frame::new().fill(if self.dark {
-                Color32::from_rgb(29, 30, 35)
-            } else {
-                Color32::from_rgb(247, 247, 250)
-            }))
-            .show(ctx, |ui| {
+            .frame(
+                egui::Frame::new()
+                    .fill(colors.surface_raised)
+                    .corner_radius(egui::CornerRadius {
+                        nw: radius,
+                        ne: radius,
+                        ..Default::default()
+                    }),
+            )
+            .show_inside(ui, |ui| {
                 let rect = ui.max_rect();
                 let ink = if focused {
                     ui.visuals().text_color()
-                } else if self.dark {
-                    Color32::from_gray(160)
                 } else {
-                    Color32::from_gray(100)
+                    colors.muted
                 };
                 let button = |ui: &mut egui::Ui, x: f32, icon: &str, label: &str, close: bool| {
                     let r =
@@ -31,7 +36,7 @@ impl DevKits {
                             r,
                             6.,
                             if close {
-                                Color32::from_rgb(205, 57, 70)
+                                colors.danger.base
                             } else {
                                 ui.visuals().widgets.hovered.weak_bg_fill
                             },
@@ -43,7 +48,7 @@ impl DevKits {
                         icon,
                         FontId::proportional(16.),
                         if close && hovered {
-                            Color32::WHITE
+                            colors.danger.on_base
                         } else {
                             ink
                         },
@@ -94,7 +99,7 @@ impl DevKits {
                     false,
                 ) {
                     self.dark = !self.dark;
-                    theme(ctx, self.dark);
+                    theme(&ctx, self.dark);
                 }
                 if button(
                     ui,
@@ -131,13 +136,6 @@ impl DevKits {
                     FontId::proportional(14.),
                     ink,
                 );
-                ui.painter().text(
-                    egui::pos2(rect.center().x, rect.center().y),
-                    Align2::CENTER_CENTER,
-                    self.tool.title(),
-                    FontId::proportional(13.),
-                    ink,
-                );
                 if drag.double_clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                 } else if drag.drag_started_by(egui::PointerButton::Primary) {
@@ -146,17 +144,66 @@ impl DevKits {
                 ui.painter().hline(
                     rect.x_range(),
                     rect.bottom() - 0.5,
-                    Stroke::new(
-                        1_f32,
-                        if self.dark {
-                            Color32::from_rgb(47, 48, 56)
-                        } else {
-                            Color32::from_rgb(224, 225, 232)
-                        },
-                    ),
+                    Stroke::new(1_f32, colors.border),
                 );
             });
     }
+}
+
+fn edge_to_edge(ctx: &egui::Context) -> bool {
+    ctx.input(|i| {
+        i.viewport().maximized.unwrap_or(false) || i.viewport().fullscreen.unwrap_or(false)
+    })
+}
+
+pub fn corner_radius(ctx: &egui::Context) -> u8 {
+    if edge_to_edge(ctx) {
+        0
+    } else {
+        11
+    }
+}
+
+fn surface_rect(ctx: &egui::Context) -> Rect {
+    ctx.screen_rect()
+        .shrink(if edge_to_edge(ctx) { 0. } else { 20. })
+}
+
+/// Paint our own surface so rounded corners and shadows also work without native decorations.
+pub fn window_frame(ctx: &egui::Context, dark: bool, contents: impl FnOnce(&mut egui::Ui)) {
+    let flat = edge_to_edge(ctx);
+    let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new().inner_margin(if flat { 0. } else { 20. }))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(ctx.style().visuals.panel_fill)
+                .corner_radius(if flat { 0 } else { 12 })
+                .stroke(if flat {
+                    Stroke::NONE
+                } else {
+                    Stroke::new(1_f32, design::palette(dark).border)
+                })
+                .shadow(if flat {
+                    egui::Shadow::NONE
+                } else {
+                    egui::Shadow {
+                        offset: [0, 4],
+                        blur: 24,
+                        spread: 0,
+                        color: Color32::from_black_alpha(if focused {
+                            if dark {
+                                95
+                            } else {
+                                48
+                            }
+                        } else {
+                            24
+                        }),
+                    }
+                })
+                .show(ui, contents);
+        });
 }
 
 /// Native resize operations keep compositor snapping and size constraints intact.
@@ -166,7 +213,7 @@ pub fn resize_edges(ctx: &egui::Context) {
     }) {
         return;
     }
-    let r = ctx.screen_rect();
+    let r = surface_rect(ctx).expand(2.);
     let edge = 5.;
     let corner = 12.;
     use ResizeDirection::*;
@@ -261,8 +308,10 @@ mod tests {
             .unwrap()
             .maximized = Some(maximized);
         let output = ctx.run(input, |ctx| {
-            app.window_title_bar(ctx);
-            egui::CentralPanel::default().show(ctx, |_| {});
+            window_frame(ctx, app.dark, |ui| {
+                app.window_title_bar(ui);
+                egui::CentralPanel::default().show_inside(ui, |_| {});
+            });
             resize_edges(ctx);
         });
         output.viewport_output[&egui::ViewportId::ROOT]
@@ -294,7 +343,8 @@ mod tests {
             let mut app = DevKits::default();
             frame(&ctx, &mut app, vec![], maximized);
             frame(&ctx, &mut app, vec![], maximized);
-            let pos = egui::pos2(x, 22.);
+            let inset = if maximized { 0. } else { 21. };
+            let pos = egui::pos2(x - inset, 22. + inset);
             let down = frame(&ctx, &mut app, pointer(pos, true), maximized);
             let up = frame(&ctx, &mut app, pointer(pos, false), maximized);
             assert!(up.contains(&expected), "{up:?}");
@@ -313,7 +363,7 @@ mod tests {
             let commands = frame(
                 &ctx,
                 &mut app,
-                pointer(egui::pos2(998., 698.), true),
+                pointer(egui::pos2(979., 679.), true),
                 maximized,
             );
             assert_eq!(

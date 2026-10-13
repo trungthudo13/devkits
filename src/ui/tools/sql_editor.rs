@@ -1,5 +1,5 @@
 use super::*;
-use egui::{text::LayoutJob, FontId, Stroke, TextFormat};
+use egui::{text::LayoutJob, FontId, TextFormat};
 use sqlparser::{
     dialect::GenericDialect,
     keywords::Keyword,
@@ -9,16 +9,13 @@ use sqlparser::{
 pub const EXAMPLE: &str = "SELECT\n  column1,\n  column2,\n  AVG(column3) AS avg_column,\n  COUNT(*) AS total_count\nFROM\n  table1\n  JOIN table2 ON table1.id = table2.id\nWHERE\n  column4 = 'value'\n  AND column5 > 100\nGROUP BY\n  column1\nHAVING\n  total_count > 10\nORDER BY\n  column2 DESC\nLIMIT\n  10;";
 
 fn layout(text: &str, dark: bool) -> LayoutJob {
-    let base = if dark {
-        Color32::from_gray(220)
-    } else {
-        Color32::from_rgb(20, 20, 25)
-    };
+    let colors = design::palette(dark);
+    let base = colors.text;
     let mut job = LayoutJob::default();
     let format = |color| TextFormat {
-        font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
+        font_id: FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
         color,
-        line_height: Some(crate::code_editor::LINE_HEIGHT),
+        line_height: Some(crate::ui::components::code_editor::LINE_HEIGHT),
         ..Default::default()
     };
     if text.len() > 128 * 1024 {
@@ -59,30 +56,12 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
         }
         job.append(&text[previous..start], 0., format(base));
         let color = match token.token {
-            Token::Word(w) if w.keyword != Keyword::NoKeyword => {
-                if dark {
-                    Color32::from_rgb(135, 165, 255)
-                } else {
-                    Color32::from_rgb(0, 35, 230)
-                }
-            }
-            Token::Number(..) => {
-                if dark {
-                    Color32::from_rgb(120, 210, 160)
-                } else {
-                    Color32::from_rgb(0, 125, 76)
-                }
-            }
+            Token::Word(w) if w.keyword != Keyword::NoKeyword => colors.primary.text,
+            Token::Number(..) => colors.warning.text,
             Token::SingleQuotedString(_)
             | Token::DollarQuotedString(_)
-            | Token::EscapedStringLiteral(_) => {
-                if dark {
-                    Color32::from_rgb(245, 145, 145)
-                } else {
-                    Color32::from_rgb(210, 35, 35)
-                }
-            }
-            Token::Whitespace(_) => Color32::from_rgb(130, 135, 145),
+            | Token::EscapedStringLiteral(_) => colors.success.text,
+            Token::Whitespace(_) => colors.muted,
             _ => base,
         };
         job.append(&text[start..end], 0., format(color));
@@ -95,13 +74,13 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
 impl DevKits {
     pub fn sql_action(&mut self, action: Action) {
         let doc = &mut self.docs[2];
-        match self_devkits::process_with_sql_options(
+        match business::process_with_sql_options(
             &doc.input,
             Language::Sql,
             action,
             self.indent,
             self.dialect,
-            self_devkits::SqlFormatOptions {
+            business::SqlFormatOptions {
                 keyword_uppercase: self.sql_uppercase,
                 alias_align: self.sql_alias_align,
             },
@@ -122,113 +101,129 @@ impl DevKits {
             }
         }
     }
-    pub fn sql_ui(&mut self, ui: &mut egui::Ui) {
-        ui.spacing_mut().item_spacing = egui::vec2(8., 8.);
+    pub fn sql_toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.spacing_mut().item_spacing = egui::vec2(6., 8.);
         ui.spacing_mut().button_padding = egui::vec2(9., 4.);
         ui.style_mut()
             .text_styles
-            .insert(egui::TextStyle::Button, FontId::proportional(11.));
+            .insert(egui::TextStyle::Button, FontId::proportional(14.));
         ui.style_mut()
             .text_styles
-            .insert(egui::TextStyle::Body, FontId::proportional(11.));
-        if !self.dark {
-            ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::from_rgb(239, 238, 244);
-            ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
-            ui.visuals_mut().widgets.inactive.corner_radius = egui::CornerRadius::same(1);
-        }
-        ui.horizontal_wrapped(|ui| {
-            egui::ComboBox::from_id_salt("sql-dialect")
-                .width(78.)
-                .selected_text(match self.dialect {
-                    SqlDialect::MySql => "mysql",
-                    SqlDialect::PostgreSql => "postgresql",
-                    SqlDialect::Sqlite => "sqlite",
-                    SqlDialect::Generic => "generic",
-                })
-                .show_ui(ui, |ui| {
-                    for (d, label) in [
-                        (SqlDialect::MySql, "mysql"),
-                        (SqlDialect::PostgreSql, "postgresql"),
-                        (SqlDialect::Sqlite, "sqlite"),
-                        (SqlDialect::Generic, "generic"),
-                    ] {
-                        ui.selectable_value(&mut self.dialect, d, label);
-                    }
-                });
-            ui.add_sized(
-                [102., 28.],
-                egui::Checkbox::new(&mut self.sql_uppercase, "Keyword\nuppercase"),
-            );
-            ui.add_sized(
-                [60., 28.],
-                egui::Checkbox::new(&mut self.sql_alias_align, "Alias\nalign"),
-            );
-            if ui
-                .add_sized(
-                    [72., 22.],
-                    egui::Button::new(format!("{} Example", icons::FLASK)),
-                )
-                .clicked()
-            {
-                self.docs[2].input = EXAMPLE.into();
-                self.sql_action(Action::Format);
-            }
-            if ui
-                .add_sized(
-                    [82., 22.],
-                    egui::Button::new(format!("{} Clipboard", icons::CLIPBOARD)),
-                )
-                .on_hover_text("Paste SQL from the system clipboard")
-                .clicked()
-            {
-                match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                    Ok(text) if text.len() <= self_devkits::MAX_INPUT => {
-                        self.docs[2] = Document {
-                            input: text,
-                            ..Default::default()
-                        };
-                    }
-                    Ok(_) => {
-                        self.docs[2].error = true;
-                        self.docs[2].message = "Clipboard exceeds the 2 MiB limit.".into();
-                    }
-                    Err(e) => {
-                        self.docs[2].error = true;
-                        self.docs[2].message = format!("Cannot read clipboard: {e}");
+            .insert(egui::TextStyle::Body, FontId::proportional(14.));
+
+        let compact = ui.available_width() < 700.;
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+            egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
+            |ui| {
+                if ui
+                    .add_sized(
+                        [76., 22.],
+                        design::button(
+                            format!("{} Beautify", icons::BRACKETS_CURLY),
+                            design::colors(ui).primary,
+                        ),
+                    )
+                    .on_hover_text("Ctrl/Cmd + Enter")
+                    .clicked()
+                {
+                    self.sql_action(Action::Format);
+                }
+                if ui
+                    .add_sized(
+                        [96., 22.],
+                        egui::Button::new(format!("{} Compression", icons::ARROWS_IN)),
+                    )
+                    .clicked()
+                {
+                    self.sql_action(Action::Minify);
+                }
+                if ui
+                    .add_sized(
+                        [80., 22.],
+                        egui::Button::new(format!("{} Clipboard", icons::CLIPBOARD)),
+                    )
+                    .on_hover_text("Paste SQL from the system clipboard")
+                    .clicked()
+                {
+                    match desktop::clipboard_text() {
+                        Ok(text) if text.len() <= business::MAX_INPUT => {
+                            self.docs[2] = Document {
+                                input: text,
+                                ..Default::default()
+                            };
+                        }
+                        Ok(_) => {
+                            self.docs[2].error = true;
+                            self.docs[2].message = "Clipboard exceeds the 2 MiB limit.".into();
+                        }
+                        Err(e) => {
+                            self.docs[2].error = true;
+                            self.docs[2].message = format!("Cannot read clipboard: {e}");
+                        }
                     }
                 }
-            }
-            if ui
-                .add_sized(
-                    [100., 22.],
-                    egui::Button::new(format!("{} Compression", icons::ARROWS_IN)),
-                )
-                .clicked()
-            {
-                self.sql_action(Action::Minify);
-            }
-            if ui
-                .add_sized(
-                    [76., 22.],
-                    egui::Button::new(format!("{} Beautify", icons::BRACKETS_CURLY)),
-                )
-                .on_hover_text("Ctrl/Cmd + Enter")
-                .clicked()
-            {
-                self.sql_action(Action::Format);
-            }
-        });
+                if ui
+                    .add_sized(
+                        [68., 22.],
+                        egui::Button::new(format!("{} Example", icons::FLASK)),
+                    )
+                    .clicked()
+                {
+                    self.docs[2].input = EXAMPLE.into();
+                    self.sql_action(Action::Format);
+                }
+                if compact {
+                    ui.end_row();
+                }
+                ui.add_sized(
+                    [50., 28.],
+                    egui::Checkbox::new(&mut self.sql_alias_align, "Alias\nalign"),
+                );
+                ui.add_sized(
+                    [86., 28.],
+                    egui::Checkbox::new(&mut self.sql_uppercase, "Keyword\nuppercase"),
+                );
+                egui::ComboBox::from_id_salt("sql-dialect")
+                    .width(78.)
+                    .selected_text(match self.dialect {
+                        SqlDialect::MySql => "mysql",
+                        SqlDialect::PostgreSql => "postgresql",
+                        SqlDialect::Sqlite => "sqlite",
+                        SqlDialect::Generic => "generic",
+                    })
+                    .show_ui(ui, |ui| {
+                        for (d, label) in [
+                            (SqlDialect::MySql, "mysql"),
+                            (SqlDialect::PostgreSql, "postgresql"),
+                            (SqlDialect::Sqlite, "sqlite"),
+                            (SqlDialect::Generic, "generic"),
+                        ] {
+                            ui.selectable_value(&mut self.dialect, d, label);
+                        }
+                    });
+            },
+        );
+    }
+
+    pub fn sql_ui(&mut self, ui: &mut egui::Ui) {
         if !self.docs[2].message.is_empty() {
-            ui.colored_label(
+            design::notice(
+                ui,
                 if self.docs[2].error {
-                    Color32::from_rgb(205, 55, 55)
+                    design::colors(ui).danger
                 } else {
-                    ui.visuals().text_color()
+                    design::colors(ui).success
                 },
                 &self.docs[2].message,
             );
         }
-        let response = crate::code_editor::code_editor(ui, &mut self.docs[2].input, "sql", layout);
+        let response = crate::ui::components::code_editor::code_editor(
+            ui,
+            &mut self.docs[2].input,
+            "sql",
+            layout,
+        );
         if response.changed() {
             self.docs[2].message.clear();
         }
@@ -246,11 +241,8 @@ impl DevKits {
                 ui.close_menu();
             }
             if ui.button("Save SQL…").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_file_name("query.sql")
-                    .save_file()
-                {
-                    if let Err(e) = std::fs::write(path, &self.docs[2].input) {
+                if let Some(path) = desktop::save_file("query.sql", "sql") {
+                    if let Err(e) = business::documents::save_source(&path, &self.docs[2].input) {
                         self.docs[2].error = true;
                         self.docs[2].message = e.to_string();
                     }

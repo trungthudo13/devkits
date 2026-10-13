@@ -12,11 +12,28 @@ An offline desktop toolbox for developers, built with **Rust and egui/eframe**. 
 | Regex Editor | Live matching, capture groups, substitution and extraction |
 | Random Password | Generate 1–1,000 passwords with configurable character groups |
 | QR Generator | Preview QR codes and export PNG files |
-| PDF Extraction | Review/rename embedded images, crop page regions, extract text, optional offline OCR |
+| PDF Extraction | Review/rename embedded images, suggest/crop page regions, extract text, optional offline OCR |
 
 Editors support UTF-8 files, clipboard operations, sample data, line numbers and indentation guides. `Ctrl+Enter` / `Cmd+Enter` formats the current JSON/XML/SQL document. Right-click an editor for its file and validation actions.
 
-The custom title bar provides minimize, maximize/restore, close, pin and theme controls. Drag its empty area to move the window; double-click to maximize/restore. Resize from the edges and corners. The embedded editor font is **Noto Sans Mono Regular, 14 pt**, with 20 pt code rows. UI labels use egui's Ubuntu Light with Noto Sans Mono as a Unicode fallback; icons use Phosphor.
+The window uses rounded corners, a thin theme-aware border and a soft shadow over a transparent background. Maximized and fullscreen windows use square edges without the shadow. The custom title bar provides minimize, maximize/restore, close, pin and theme controls. Drag its empty area to move the window; double-click to maximize/restore. Resize from the edges and corners. The embedded editor font is **Noto Sans Mono Regular, 14 pt**, with 20 pt code rows. UI labels use egui's Ubuntu Light with Noto Sans Mono as a Unicode fallback; icons use Phosphor.
+
+## Color system
+
+DevKits adapts the official [Bootstrap 5.3 color tokens](https://getbootstrap.com/docs/5.3/customize/css-variables/) to native egui widgets. It does not load Bootstrap CSS or a web runtime. All application colors live in `src/ui/design.rs`.
+
+| Role | Base | Light text emphasis | Dark text emphasis | Usage |
+| --- | --- | --- | --- | --- |
+| `primary` | `#0D6EFD` | `#052C65` | `#6EA8FE` | Main actions, selection, focus |
+| `secondary` | `#6C757D` | `#2B2F32` | `#A7ACB1` | Supporting actions |
+| `success` | `#198754` | `#0A3622` | `#75B798` | Completed actions, suggested PDF regions |
+| `warning` | `#FFC107` | `#664D03` | `#FFDA6A` | Warnings requiring attention |
+| `danger` | `#DC3545` | `#58151C` | `#EA868F` | Errors and close-button hover |
+| `info` | `#0DCAF0` | `#055160` | `#6EDFF6` | Progress and guidance |
+
+Each role includes `base`, `on_base`, `text`, `bg` and `border`. The base colors stay stable; text emphasis, subtle backgrounds and borders adapt to light/dark mode. Surfaces use Bootstrap's body/tertiary/secondary backgrounds. Muted labels use opaque gray-700 (light) or gray-500 (dark) to preserve contrast. Syntax colors are a DevKits mapping: primary for keys/tags/keywords, success for strings, warning for numbers, muted for comments and line numbers. QR image pixels retain their original black/white values.
+
+Use `design::palette(dark)` or `design::colors(ui)` instead of hard-coded RGB values. `design::button` and `design::notice` provide semantic actions and messages. Tests check a minimum 4.5:1 contrast for role text on its subtle background and body surface, solid-button labels, and normal/muted text on the three surfaces. This checks those color pairs, not a full accessibility certification.
 
 ## PDF workflow
 
@@ -35,11 +52,12 @@ Caption matching is a geometric heuristic, not image recognition. It can be wron
 ### Page regions
 
 1. Choose a page and rendering size, then click **Load page**.
-2. Drag a rectangle around one photo or illustration.
-3. Enter its filename and click **Add region**. Repeat for other regions/pages.
-4. Open **Images & filenames** to review and export the collected regions.
+2. Click **Suggest image regions** to find separate foreground areas. Click a numbered box to select it, or draw a rectangle manually.
+3. Enter its filename and click **Add region**. Alternatively, **Add all suggestions** queues the proposed regions with numbered names, skipping identical crops already queued at the same rendering size.
+4. Open **Images & filenames** to preview crops, edit names, uncheck unwanted images or **Remove selected entry**, then export.
+5. Repeat for other pages as needed.
 
-This works with scanned pages, collages and vector graphics. Regions are rasterized at the selected page resolution; the rectangle shown in the preview is mapped to the full-resolution page. It does not automatically identify objects or split dishes. **Export all pages** remains available when complete page PNGs are wanted.
+This works with scanned pages, collages and vector graphics. Regions are rasterized at the selected page resolution; the rectangle shown in the preview is mapped to the full-resolution page. Region suggestions use background contrast and connected areas, not object recognition. They work best with separated photos on plain backgrounds, including lightly tinted scans. Touching photos, text blocks, full-bleed pages and complex backgrounds can produce missing or incorrect suggestions; inspect each crop and redraw it if needed. Detection proposes at most 64 regions per page and does not infer dish names or automatically split touching objects. **Export all pages** remains available when complete page PNGs are wanted.
 
 ### Text & OCR
 
@@ -50,7 +68,7 @@ This works with scanned pages, collages and vector graphics. Regions are rasteri
 
 OCR runs locally and requires Tesseract. Accuracy and reading order depend on scan quality and layout. Text recognition does not automatically label image regions.
 
-PDF work runs in a background thread with progress and cancellation. Import supports files up to 100 MiB and 2,000 pages. Text output is limited to 16 MiB. Page rendering supports up to 4,000 pixels on the longest edge. Oversized images can exceed the bounded preview decoder; page rendering is an alternative. Password-protected PDFs must be unlocked before import.
+PDF work runs in a background thread with progress and cancellation. Import supports files up to 100 MiB and 2,000 pages. Text output is limited to 16 MiB. Page rendering supports up to 4,000 pixels on the longest edge. Oversized images can exceed the bounded preview decoder; page rendering is an alternative. A failed first image preview no longer discards the extracted image list; other entries remain available for review/export. Password-protected PDFs must be unlocked before import.
 
 ### PDF/OCR dependencies
 
@@ -163,19 +181,61 @@ The tag must match the Cargo version. Build jobs have read-only repository permi
 
 Runner labels and availability are documented in [GitHub's hosted runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
-## Source layout
+## Architecture
 
-- `src/main.rs`: application state, navigation and startup.
-- `src/window_chrome.rs`: custom title bar and resize controls.
-- `src/lib.rs`: document processing, passwords and QR generation.
-- `src/*_editor.rs`: individual tool interfaces.
-- `src/code_editor.rs`: shared code editor, caret and indentation rendering.
-- `src/pdf_tools.rs`: PDF extraction, staging, crops, export and OCR.
-- `src/pdf_captions.rs`: conservative caption matching and safe filenames.
-- `src/regex_tools.rs`: regex processing.
-- `src/ime.rs`: Linux IME compatibility layer.
-- `tests/`: integration and packaging tests.
-- `scripts/`: platform packaging and Windows installer definition.
+The source is organized into three layers:
+
+```text
+src/
+  main.rs                  # Entry point: ui::run()
+  lib.rs                   # Public API and compatibility exports
+  ui/
+    app.rs                 # eframe lifecycle
+    bootstrap.rs           # Fonts, native window and icon setup
+    navigation.rs          # Shared tool metadata
+    design.rs              # Semantic light/dark color tokens
+    shell/
+      window_chrome.rs     # Native window controls, rounded frame, resize
+      navbar.rs            # Brand, search and tool navigation
+      header.rs            # Consistent main-body title and description
+      footer.rs            # Local-processing status, shortcuts and version
+    components/            # Shared code editor and embedded brand assets
+    tools/                 # Individual tool screens and presentation state
+  business/
+    documents.rs           # JSON/XML/SQL processing and source-file use cases
+    password.rs            # Password constraints and generation
+    qr.rs                  # QR generation
+    regex.rs               # Regex matching, substitution and extraction
+    pdf/                   # Extraction/OCR workflows, captions and crop proposals
+  adapter/
+    desktop.rs             # Native file pickers and clipboard access
+    files.rs               # Bounded reads, snapshots and filesystem boundary
+    images.rs              # Image decoding and PNG persistence
+    pdf.rs                 # Typed Poppler/Tesseract operations
+    process.rs             # Subprocess timeout, cancellation and platform paths
+    workspace.rs           # Private temporary folders and cleanup
+    random.rs              # Operating-system entropy
+    ime.rs                 # Linux input-method compatibility
+```
+
+UI calls business services for application behavior. Business calls adapters for file/image I/O and external tools; adapters never import business or UI modules. UI also uses the desktop adapter for presentation-specific native dialogs and clipboard reads. Egui window commands and rendering remain in UI. Add future empty architectural folders with `.gitkeep`; all three layers currently contain working code, so none needs a placeholder.
+
+`src/lib.rs` preserves the existing top-level functions and `pdf_tools`/`regex_tools` aliases for CLI consumers. New code should use the explicit `business` and `adapter` modules. Integration tests cover behavior across the refactor; architecture checks guard dependency boundaries.
+
+Every tool uses the same navbar, body header, padded content area and footer. The JSON, SQL and Regex editors use 14px actions in borderless body headers with matching padding (JSON/SQL align right; Regex aligns left); other tools keep their controls inside the content area. The footer remains visible independently of long editor content.
+
+## Application icon
+
+`assets/devkits.svg` is the canonical logo. Generated `assets/icons/devkits.png`, `.ico`, and `.icns` are checked in, with a SHA-256 manifest to detect stale assets. The PNG is embedded as the native window icon; Linux installs the SVG desktop icon, Windows embeds the ICO into the executable and installer, and macOS declares the ICNS in the application bundle.
+
+After changing the SVG, regenerate icons on Ubuntu:
+
+```sh
+sudo apt install python3-gi gir1.2-rsvg-2.0 python3-pil
+python3 scripts/generate_icons.py
+```
+
+Ordinary builds do not need the icon-generation dependencies. Windows builds use `winresource` and the Windows SDK resource compiler (available with the documented Visual Studio build tools). CI packages the same icon assets on all platforms.
 
 ## License
 

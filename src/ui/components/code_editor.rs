@@ -1,4 +1,4 @@
-use eframe::egui::{self, text::LayoutJob, Color32, FontId, Stroke};
+use eframe::egui::{self, text::LayoutJob, FontId, Stroke};
 
 pub const FONT_SIZE: f32 = 14.;
 pub const LINE_HEIGHT: f32 = 20.;
@@ -52,8 +52,12 @@ pub fn editor_with_folds(
                                     "",
                                     0.,
                                     egui::TextFormat {
-                                        font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
-                                        line_height: Some(crate::code_editor::LINE_HEIGHT),
+                                        font_id: FontId::monospace(
+                                            crate::ui::components::code_editor::FONT_SIZE,
+                                        ),
+                                        line_height: Some(
+                                            crate::ui::components::code_editor::LINE_HEIGHT,
+                                        ),
                                         ..Default::default()
                                     },
                                 );
@@ -68,9 +72,27 @@ pub fn editor_with_folds(
                 // only afterwards, but must remain beneath its text and caret.
                 let decoration_slot = ui.painter().add(egui::Shape::Noop);
                 let mut decorations = Vec::new();
+                let editor_id = ui.make_persistent_id((language, "source"));
+                let original_events = if language == "json"
+                    && ui.memory(|memory| memory.has_focus(editor_id))
+                {
+                    egui::TextEdit::load_state(ui.ctx(), editor_id)
+                        .and_then(|state| state.cursor.char_range())
+                        .map(|cursor| {
+                            ui.input_mut(|input| {
+                                let events = input.events.clone();
+                                input.events = super::json_typing::events(text, cursor, &events);
+                                events
+                            })
+                        })
+                } else {
+                    None
+                };
                 let output = egui::TextEdit::multiline(text)
-                    .id_salt((language, "source"))
-                    .font(FontId::monospace(crate::code_editor::FONT_SIZE))
+                    .id(editor_id)
+                    .font(FontId::monospace(
+                        crate::ui::components::code_editor::FONT_SIZE,
+                    ))
                     .code_editor()
                     .frame(false)
                     .margin(egui::Margin::ZERO)
@@ -82,11 +104,10 @@ pub fn editor_with_folds(
                     ))
                     .layouter(&mut layouter)
                     .show(ui);
-                let number_color = if ui.visuals().dark_mode {
-                    Color32::from_rgb(135, 180, 220)
-                } else {
-                    Color32::from_rgb(20, 105, 140)
-                };
+                if let Some(events) = original_events {
+                    ui.input_mut(|input| input.events = events);
+                }
+                let number_color = crate::ui::design::colors(ui).muted;
                 for (index, row) in output.galley.rows.iter().enumerate() {
                     let y = output.galley_pos.y + row.rect.top();
                     if y + LINE_HEIGHT < ui.clip_rect().top() || y > ui.clip_rect().bottom() {
@@ -96,7 +117,7 @@ pub fn editor_with_folds(
                         egui::pos2(gutter.right() - 16., y + 1.),
                         egui::Align2::RIGHT_TOP,
                         (index + 1).to_string(),
-                        FontId::monospace(crate::code_editor::FONT_SIZE),
+                        FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
                         number_color,
                     );
                 }
@@ -121,11 +142,7 @@ pub fn editor_with_folds(
                         }
                     }
                 }
-                let guide = if ui.visuals().dark_mode {
-                    Color32::from_gray(60)
-                } else {
-                    Color32::from_gray(232)
-                };
+                let guide = crate::ui::design::colors(ui).border;
                 let character_width =
                     ui.fonts(|f| f.glyph_width(&FontId::monospace(FONT_SIZE), ' '));
                 for (index, line) in text.lines().enumerate() {
@@ -175,6 +192,186 @@ pub fn editor_with_folds(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn type_at(
+        source: &str,
+        cursor: usize,
+        events: Vec<egui::Event>,
+        language: &str,
+    ) -> (String, usize) {
+        type_over_selection(source, cursor, cursor, events, language)
+    }
+
+    fn type_over_selection(
+        source: &str,
+        start: usize,
+        end: usize,
+        events: Vec<egui::Event>,
+        language: &str,
+    ) -> (String, usize) {
+        let ctx = egui::Context::default();
+        let mut text = source.to_owned();
+        let mut editor_id = None;
+        let render = |ctx: &egui::Context, text: &mut String| {
+            egui::CentralPanel::default()
+                .show(ctx, |ui| {
+                    code_editor(ui, text, language, |text, _| {
+                        LayoutJob::simple(
+                            text.into(),
+                            FontId::monospace(FONT_SIZE),
+                            egui::Color32::WHITE,
+                            f32::INFINITY,
+                        )
+                    })
+                    .id
+                })
+                .inner
+        };
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            editor_id = Some(render(ctx, &mut text))
+        });
+        let id = editor_id.unwrap();
+        ctx.memory_mut(|m| m.request_focus(id));
+        let mut state = egui::TextEdit::load_state(&ctx, id).unwrap();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(start),
+                egui::text::CCursor::new(end),
+            )));
+        state.store(&ctx, id);
+        let _ = ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                render(ctx, &mut text);
+            },
+        );
+        let cursor = egui::TextEdit::load_state(&ctx, id)
+            .unwrap()
+            .cursor
+            .char_range()
+            .unwrap();
+        assert_eq!(cursor.primary.index, cursor.secondary.index);
+        (text, cursor.primary.index)
+    }
+
+    #[test]
+    fn quote_wraps_selection_including_partial_words_and_unicode() {
+        for events in [
+            vec![egui::Event::Text("\"".into())],
+            vec![
+                egui::Event::Ime(egui::ImeEvent::Enabled),
+                egui::Event::Ime(egui::ImeEvent::Commit("\"".into())),
+            ],
+            vec![
+                egui::Event::Ime(egui::ImeEvent::Enabled),
+                egui::Event::Ime(egui::ImeEvent::Preedit("".into())),
+                egui::Event::Ime(egui::ImeEvent::Commit("\"".into())),
+            ],
+        ] {
+            for (source, start, end, expected, cursor) in [
+                ("ABC", 0, 2, "\"AB\"C", 4),
+                ("ABC", 2, 0, "\"AB\"C", 4),
+                ("xTiếng Việty", 1, 11, "x\"Tiếng Việt\"y", 13),
+                ("ABC", 0, 3, "\"ABC\"", 5),
+            ] {
+                assert_eq!(
+                    type_over_selection(source, start, end, events.clone(), "json"),
+                    (expected.into(), cursor)
+                );
+            }
+        }
+        // Pasting a quote still replaces the selection as a normal paste operation.
+        assert_eq!(
+            type_over_selection("ABC", 0, 2, vec![egui::Event::Paste("\"".into())], "json"),
+            ("\"C".into(), 1)
+        );
+    }
+
+    #[test]
+    fn json_typing_pairs_delimiters_and_keeps_cursor_inside() {
+        for (typed, expected) in [("{", "{}"), ("\"", "\"\"")] {
+            assert_eq!(
+                type_at("", 0, vec![egui::Event::Text(typed.into())], "json"),
+                (expected.into(), 1)
+            );
+        }
+        assert_eq!(
+            type_at(
+                "{}",
+                1,
+                vec![
+                    egui::Event::Text("\"".into()),
+                    egui::Event::Text("tên".into()),
+                    egui::Event::Text("\"".into()),
+                    egui::Event::Text("}".into())
+                ],
+                "json"
+            ),
+            ("{\"tên\"}".into(), 7)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn json_typing_pairs_linux_ime_commits() {
+        for (source, cursor, typed, expected, end) in [
+            ("", 0, "{", "{}", 1),
+            ("{}", 1, "\"", "{\"\"}", 2),
+            ("{\"\"}", 2, "\"", "{\"\"}", 3),
+            ("{}", 1, "}", "{}", 2),
+            ("\"\"", 1, "tiếng Việt", "\"tiếng Việt\"", 11),
+        ] {
+            let mut events = vec![egui::Event::Ime(egui::ImeEvent::Commit(typed.into()))];
+            self_devkits::adapter::ime::LinuxIme::default().normalize(&mut events);
+            assert_eq!(
+                type_at(source, cursor, events, "json"),
+                (expected.into(), end)
+            );
+        }
+    }
+
+    #[test]
+    fn json_typing_handles_preedit_and_commit_in_the_same_frame() {
+        for preedit in ["", "{"] {
+            let events = vec![
+                egui::Event::Ime(egui::ImeEvent::Enabled),
+                egui::Event::Ime(egui::ImeEvent::Preedit(preedit.into())),
+                egui::Event::Ime(egui::ImeEvent::Commit("{".into())),
+            ];
+            assert_eq!(type_at("", 0, events, "json"), ("{}".into(), 1));
+        }
+    }
+
+    #[test]
+    fn json_typing_preserves_strings_paste_and_other_languages() {
+        for (source, cursor, input, expected, end) in [
+            ("\"xin chào \"", 10, "{", "\"xin chào {\"", 11),
+            ("\"a\\\"", 3, "\"", "\"a\\\"\"", 4),
+            ("{}", 1, "}", "{}", 2),
+        ] {
+            assert_eq!(
+                type_at(
+                    source,
+                    cursor,
+                    vec![egui::Event::Text(input.into())],
+                    "json"
+                ),
+                (expected.into(), end)
+            );
+        }
+        assert_eq!(
+            type_at("", 0, vec![egui::Event::Paste("{".into())], "json"),
+            ("{".into(), 1)
+        );
+        assert_eq!(
+            type_at("", 0, vec![egui::Event::Text("{".into())], "sql"),
+            ("{".into(), 1)
+        );
+    }
+
     #[test]
     fn empty_editor_decorations_are_beneath_the_caret() {
         let ctx = egui::Context::default();
@@ -249,8 +446,10 @@ mod tests {
                             |text, _| {
                                 LayoutJob::simple(
                                     text.into(),
-                                    FontId::monospace(crate::code_editor::FONT_SIZE),
-                                    Color32::WHITE,
+                                    FontId::monospace(
+                                        crate::ui::components::code_editor::FONT_SIZE,
+                                    ),
+                                    egui::Color32::WHITE,
                                     f32::INFINITY,
                                 )
                             },

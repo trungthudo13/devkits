@@ -1,5 +1,9 @@
 """Verify package metadata and layout without installing software on the test host."""
 import importlib.util
+import hashlib
+import json
+import plistlib
+from unittest.mock import patch
 import os
 from pathlib import Path
 import platform
@@ -16,6 +20,28 @@ spec.loader.exec_module(package)
 
 
 class PackagingTests(unittest.TestCase):
+    def test_generated_icons_match_source_manifest_and_native_formats(self):
+        manifest = json.loads((ROOT / "assets/icons/manifest.json").read_text())
+        for path, expected in manifest.items():
+            self.assertEqual(hashlib.sha256((ROOT / path).read_bytes()).hexdigest(), expected, path)
+        self.assertTrue((ROOT / "assets/icons/devkits.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertTrue((ROOT / "assets/icons/devkits.ico").read_bytes().startswith(b"\x00\x00\x01\x00"))
+        self.assertTrue((ROOT / "assets/icons/devkits.icns").read_bytes().startswith(b"icns"))
+
+    def test_macos_bundle_declares_and_contains_icon(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stage, dist = root / "stage", root / "dist"
+            stage.mkdir(); dist.mkdir()
+            # Test bundle composition independently of macOS-only signing/disk tools.
+            with patch.object(package, "run"), patch.object(Path, "symlink_to"):
+                package.macos_package(Path(sys.executable), stage, dist, "arm64")
+            app = stage / "volume/DevKits.app/Contents"
+            with (app / "Info.plist").open("rb") as handle:
+                info = plistlib.load(handle)
+            self.assertEqual(info["CFBundleIconFile"], "devkits.icns")
+            self.assertEqual((app / "Resources/devkits.icns").read_bytes(), (ROOT / "assets/icons/devkits.icns").read_bytes())
+
     def test_tag_version_mismatch_fails_before_packaging(self):
         with tempfile.TemporaryDirectory() as temp:
             result = subprocess.run(
@@ -48,6 +74,8 @@ class PackagingTests(unittest.TestCase):
             launcher = (extracted / "usr/share/applications/devkits.desktop").read_text()
             self.assertIn("Name=DevKits", launcher)
             self.assertIn("Exec=devkits", launcher)
+            self.assertIn("Icon=devkits", launcher)
+            self.assertEqual((extracted / "usr/share/icons/hicolor/scalable/apps/devkits.svg").read_bytes(), (ROOT / "assets/devkits.svg").read_bytes())
             self.assertTrue((extracted / "usr/share/doc/devkits/licenses/noto-sans-mono/OFL.txt").is_file())
 
 

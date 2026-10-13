@@ -1,6 +1,6 @@
 use super::*;
 use egui::{text::LayoutJob, FontId, RichText, TextFormat};
-use self_devkits::regex_tools::{self, Mode, ResultData};
+use self_devkits::business::regex::{self as regex_tools, Mode, ResultData};
 
 pub struct RegexEditor {
     pub mode: Mode,
@@ -72,12 +72,8 @@ impl RegexEditor {
         let mut job = LayoutJob::default();
         let mut previous = 0;
         let style = TextFormat {
-            font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
-            color: if dark {
-                Color32::from_gray(225)
-            } else {
-                Color32::from_gray(35)
-            },
+            font_id: FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
+            color: design::palette(dark).text,
             ..Default::default()
         };
         for m in &matches.matches {
@@ -90,11 +86,8 @@ impl RegexEditor {
                 &text[start..end],
                 0.,
                 TextFormat {
-                    background: if dark {
-                        Color32::from_rgb(35, 78, 115)
-                    } else {
-                        Color32::from_rgb(190, 220, 255)
-                    },
+                    background: design::palette(dark).primary.bg,
+                    color: design::palette(dark).primary.text,
                     ..style.clone()
                 },
             );
@@ -109,7 +102,8 @@ impl RegexEditor {
         ui.label("Rust regex · UTF-8").on_hover_text(
             "Rust regex syntax. Look-around and backreferences in patterns are not supported.",
         );
-        ui.weak(
+        ui.colored_label(
+            crate::ui::design::colors(ui).muted,
             "Offsets below count Unicode characters, starting at 0; end positions are exclusive.",
         );
         for (flag, label) in [
@@ -133,10 +127,10 @@ impl RegexEditor {
             .max_height((ui.available_height() - 155.).max(100.))
             .show(ui, |ui| match &self.result {
                 Err(e) => {
-                    ui.colored_label(Color32::from_rgb(205, 65, 65), e);
+                    ui.colored_label(design::colors(ui).danger.text, e);
                 }
                 Ok(data) if data.matches.is_empty() => {
-                    ui.weak("No matches.");
+                    ui.colored_label(crate::ui::design::colors(ui).muted, "No matches.");
                 }
                 Ok(data) => {
                     for (i, m) in data.matches.iter().enumerate() {
@@ -154,10 +148,16 @@ impl RegexEditor {
                                 if let Some(value) = &group.text {
                                     ui.label(RichText::new(format!("{value:?}")).monospace());
                                     if let Some((a, b)) = group.range {
-                                        ui.weak(format!("{a}–{b}"));
+                                        ui.colored_label(
+                                            crate::ui::design::colors(ui).muted,
+                                            format!("{a}–{b}"),
+                                        );
                                     }
                                 } else {
-                                    ui.weak("Not participating");
+                                    ui.colored_label(
+                                        crate::ui::design::colors(ui).muted,
+                                        "Not participating",
+                                    );
                                 }
                             }
                         });
@@ -178,54 +178,68 @@ impl RegexEditor {
         ] {
             ui.horizontal_wrapped(|ui| {
                 ui.monospace(token);
-                ui.weak(help);
+                ui.colored_label(crate::ui::design::colors(ui).muted, help);
             });
         }
     }
-    pub fn ui(&mut self, ui: &mut egui::Ui) {
+    pub fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing = egui::vec2(8., 8.);
-        ui.horizontal_wrapped(|ui| {
-            for mode in [Mode::Match, Mode::Substitution, Mode::Extraction] {
-                ui.selectable_value(&mut self.mode, mode, format!("{mode:?}"));
-            }
-            if ui.button("Example").clicked() {
-                self.pattern = r"\x20".into();
-                self.input = "match all spaces".into();
-                self.flags = "gu".into();
-                self.replacement.clear();
-                self.extraction = "$0".into();
-            }
-            ui.menu_button("Delimiters", |ui| {
-                for (delimiter, label) in [
-                    (Some('/'), "/ … /"),
-                    (Some('#'), "# … #"),
-                    (Some('~'), "~ … ~"),
-                    (Some('|'), "| … |"),
-                    (None, "None"),
-                ] {
-                    ui.selectable_value(&mut self.delimiter, delimiter, label);
+        ui.spacing_mut().button_padding = egui::vec2(9., 4.);
+        for style in [egui::TextStyle::Body, egui::TextStyle::Button] {
+            ui.style_mut()
+                .text_styles
+                .insert(style, FontId::proportional(14.));
+        }
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+            egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true),
+            |ui| {
+                for mode in [Mode::Match, Mode::Substitution, Mode::Extraction] {
+                    ui.selectable_value(&mut self.mode, mode, format!("{mode:?}"));
                 }
-            });
-            ui.menu_button("Regex Flags", |ui| {
-                for (c, label) in [
-                    ('g', "g · Global"),
-                    ('i', "i · Ignore case"),
-                    ('m', "m · Multiline"),
-                    ('s', "s · Dotall"),
-                    ('x', "x · Extended"),
-                    ('U', "U · Ungreedy"),
-                    ('u', "u · Unicode"),
-                ] {
-                    let mut checked = self.flags.contains(c);
-                    if ui.checkbox(&mut checked, label).changed() {
-                        self.flags.retain(|f| f != c);
-                        if checked {
-                            self.flags.push(c);
+                if ui.button("Example").clicked() {
+                    self.pattern = r"\x20".into();
+                    self.input = "match all spaces".into();
+                    self.flags = "gu".into();
+                    self.replacement.clear();
+                    self.extraction = "$0".into();
+                }
+                ui.menu_button("Delimiters", |ui| {
+                    for (delimiter, label) in [
+                        (Some('/'), "/ … /"),
+                        (Some('#'), "# … #"),
+                        (Some('~'), "~ … ~"),
+                        (Some('|'), "| … |"),
+                        (None, "None"),
+                    ] {
+                        ui.selectable_value(&mut self.delimiter, delimiter, label);
+                    }
+                });
+                ui.menu_button("Regex Flags", |ui| {
+                    for (c, label) in [
+                        ('g', "g · Global"),
+                        ('i', "i · Ignore case"),
+                        ('m', "m · Multiline"),
+                        ('s', "s · Dotall"),
+                        ('x', "x · Extended"),
+                        ('U', "U · Ungreedy"),
+                        ('u', "u · Unicode"),
+                    ] {
+                        let mut checked = self.flags.contains(c);
+                        if ui.checkbox(&mut checked, label).changed() {
+                            self.flags.retain(|f| f != c);
+                            if checked {
+                                self.flags.push(c);
+                            }
                         }
                     }
-                }
-            });
-        });
+                });
+            },
+        );
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        ui.spacing_mut().item_spacing = egui::vec2(8., 8.);
         self.refresh();
         let width = ui.available_width();
         let height = ui.available_height();
@@ -234,7 +248,7 @@ impl RegexEditor {
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(egui::vec2(main,height),egui::Layout::top_down(egui::Align::Min),|ui| {
                 ui.set_width(main);
-                ui.horizontal(|ui| {ui.label(RichText::new("Regular Expression").color(accent(ui)));if let Ok(data)=&self.result {ui.weak(format!("{} matches",data.matches.len()));}});
+                ui.horizontal(|ui| {ui.label(RichText::new("Regular Expression").color(accent(ui)));if let Ok(data)=&self.result {ui.colored_label(crate::ui::design::colors(ui).muted, format!("{} matches",data.matches.len()));}});
                 egui::Frame::new().fill(ui.visuals().extreme_bg_color).corner_radius(5.).inner_margin(8.).show(ui,|ui| {
                     ui.horizontal(|ui| {
                         if let Some(d)=self.delimiter {ui.monospace(d.to_string());}
@@ -247,16 +261,15 @@ impl RegexEditor {
                 ui.horizontal_wrapped(|ui| {
                     if ui.small_button("Copy expression").clicked() {ui.ctx().copy_text(regex_tools::expression(&self.pattern,self.delimiter,&self.flags));self.notice="Expression copied.".into();}
                     if ui.small_button("Paste expression").clicked() {
-                        match arboard::Clipboard::new().and_then(|mut c|c.get_text()) {
+                        match desktop::clipboard_text() {
                             Ok(text)=>match regex_tools::parse_expression(&text,self.delimiter) {Ok((pattern,flags))=>{self.pattern=pattern;if self.delimiter.is_some() {self.flags=flags;}self.notice.clear();},Err(e)=>self.notice=e},
                             Err(e)=>self.notice=e.to_string(),
                         }
                     }
                 });
-                if !self.notice.is_empty() {ui.weak(&self.notice);}
-                if self.result.is_err() {ui.colored_label(Color32::from_rgb(205,65,65),"Cannot evaluate expression. See details at right.");}
+                if !self.notice.is_empty() {ui.colored_label(crate::ui::design::colors(ui).muted, &self.notice);}
+                if self.result.is_err() {ui.colored_label(design::colors(ui).danger.text,"Cannot evaluate expression. See details at right.");}
                 ui.add_space(4.);ui.label(RichText::new("Input").strong());
-                let input_height=if self.mode==Mode::Match {(ui.available_height()-20.).max(120.)} else {(ui.available_height()*0.46).max(100.)};
                 let data=self.result.as_ref().ok().cloned().unwrap_or_default();
                 let mut layouter=|ui:&egui::Ui,text:&str,width:f32| {
                     let mut job=if text==self.input {Self::highlighted(text,&data,ui.visuals().dark_mode)} else {Self::highlighted(text,&ResultData::default(),ui.visuals().dark_mode)};
@@ -264,8 +277,12 @@ impl RegexEditor {
                 };
                 // The source used for highlighting is copied so TextEdit can mutate independently.
                 let mut input=self.input.clone();
-                egui::Frame::new().fill(if ui.visuals().dark_mode {Color32::from_gray(24)} else {Color32::WHITE}).stroke(egui::Stroke::new(1_f32,ui.visuals().widgets.noninteractive.bg_stroke.color)).corner_radius(5.).inner_margin(10.).show(ui,|ui| {
-                    egui::ScrollArea::vertical().id_salt("regex-input").max_height(input_height).min_scrolled_height(input_height).show(ui,|ui| {ui.add_sized([ui.available_width(),input_height],egui::TextEdit::multiline(&mut input).frame(false).desired_width(f32::INFINITY).layouter(&mut layouter));});
+                egui::Frame::new().fill(design::colors(ui).surface).stroke(egui::Stroke::new(1_f32,ui.visuals().widgets.noninteractive.bg_stroke.color)).corner_radius(5.).inner_margin(10.).show(ui,|ui| {
+                    // Measure inside the frame: its padding AND stroke have already
+                    // been deducted, so the input cannot push the bottom border out.
+                    let available = ui.available_height();
+                    let input_height = if self.mode == Mode::Match { available } else { available * 0.46 }.max(1.);
+                    egui::ScrollArea::vertical().id_salt("regex-input").max_height(input_height).min_scrolled_height(0.).auto_shrink([false, false]).show(ui,|ui| {ui.add_sized([ui.available_width(),input_height],egui::TextEdit::multiline(&mut input).frame(false).margin(egui::Margin::ZERO).desired_rows(1).desired_width(f32::INFINITY).layouter(&mut layouter));});
                 });
                 self.input=input;
                 if self.mode!=Mode::Match {
@@ -291,11 +308,7 @@ impl RegexEditor {
     }
 }
 fn accent(ui: &egui::Ui) -> Color32 {
-    if ui.visuals().dark_mode {
-        Color32::from_rgb(125, 175, 255)
-    } else {
-        Color32::from_rgb(30, 95, 175)
-    }
+    design::colors(ui).primary.text
 }
 
 #[cfg(test)]

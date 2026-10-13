@@ -27,3 +27,6 @@ rqrr = "0.10"
 [profile.release]
 lto = "thin"
 strip = true
+
+[build-dependencies]
+winresource = "0.1"

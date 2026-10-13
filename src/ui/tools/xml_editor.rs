@@ -1,5 +1,5 @@
 use super::*;
-use egui::{text::LayoutJob, FontId, Stroke, TextFormat};
+use egui::{text::LayoutJob, FontId, TextFormat};
 
 pub const EXAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <store>
@@ -21,33 +21,18 @@ pub const EXAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 // Highlight unfinished XML too: editing must not require a valid document.
 fn layout(text: &str, dark: bool) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let base = if dark {
-        Color32::from_gray(220)
-    } else {
-        Color32::from_rgb(20, 20, 25)
-    };
-    let tag = if dark {
-        Color32::from_rgb(135, 165, 255)
-    } else {
-        Color32::from_rgb(0, 35, 230)
-    };
-    let value = if dark {
-        Color32::from_rgb(245, 145, 145)
-    } else {
-        Color32::from_rgb(190, 35, 35)
-    };
-    let comment = if dark {
-        Color32::from_rgb(145, 180, 150)
-    } else {
-        Color32::from_rgb(90, 130, 100)
-    };
+    let colors = design::palette(dark);
+    let base = colors.text;
+    let tag = colors.primary.text;
+    let value = colors.success.text;
+    let comment = colors.muted;
     let mut append = |s: &str, color| {
         job.append(
             s,
             0.,
             TextFormat {
-                font_id: FontId::monospace(crate::code_editor::FONT_SIZE),
-                line_height: Some(crate::code_editor::LINE_HEIGHT),
+                font_id: FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
+                line_height: Some(crate::ui::components::code_editor::LINE_HEIGHT),
                 color,
                 ..Default::default()
             },
@@ -98,7 +83,7 @@ fn layout(text: &str, dark: bool) -> LayoutJob {
 impl DevKits {
     pub fn xml_action(&mut self, action: Action) {
         let doc = &mut self.docs[1];
-        match self_devkits::process(&doc.input, Language::Xml, action, self.indent, self.dialect) {
+        match business::process(&doc.input, Language::Xml, action, self.indent, self.dialect) {
             Ok(result) => {
                 doc.error = false;
                 if action == Action::Lint {
@@ -123,11 +108,7 @@ impl DevKits {
                 .text_styles
                 .insert(style, FontId::proportional(11.));
         }
-        if !self.dark {
-            ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::from_rgb(239, 238, 244);
-            ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
-            ui.visuals_mut().widgets.inactive.corner_radius = egui::CornerRadius::same(1);
-        }
+
         ui.horizontal_wrapped(|ui| {
             egui::ComboBox::from_id_salt("xml-indent")
                 .width(85.)
@@ -146,8 +127,8 @@ impl DevKits {
                 .on_hover_text("Paste XML from the system clipboard")
                 .clicked()
             {
-                match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-                    Ok(text) if text.len() <= self_devkits::MAX_INPUT => {
+                match desktop::clipboard_text() {
+                    Ok(text) if text.len() <= business::MAX_INPUT => {
                         self.docs[1] = Document {
                             input: text,
                             ..Default::default()
@@ -181,16 +162,22 @@ impl DevKits {
             }
         });
         if !self.docs[1].message.is_empty() {
-            ui.colored_label(
+            design::notice(
+                ui,
                 if self.docs[1].error {
-                    Color32::from_rgb(205, 55, 55)
+                    design::colors(ui).danger
                 } else {
-                    ui.visuals().text_color()
+                    design::colors(ui).success
                 },
                 &self.docs[1].message,
             );
         }
-        let response = crate::code_editor::code_editor(ui, &mut self.docs[1].input, "xml", layout);
+        let response = crate::ui::components::code_editor::code_editor(
+            ui,
+            &mut self.docs[1].input,
+            "xml",
+            layout,
+        );
         if response.changed() {
             self.docs[1].message.clear();
         }
@@ -208,11 +195,8 @@ impl DevKits {
                 ui.close_menu();
             }
             if ui.button("Save XML…").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_file_name("document.xml")
-                    .save_file()
-                {
-                    if let Err(e) = std::fs::write(path, &self.docs[1].input) {
+                if let Some(path) = desktop::save_file("document.xml", "xml") {
+                    if let Err(e) = business::documents::save_source(&path, &self.docs[1].input) {
                         self.docs[1].error = true;
                         self.docs[1].message = e.to_string();
                     }
@@ -273,6 +257,6 @@ mod tests {
         assert!(layout(EXAMPLE, false)
             .sections
             .iter()
-            .any(|s| s.format.color == Color32::from_rgb(190, 35, 35)));
+            .any(|s| s.format.color == design::palette(false).success.text));
     }
 }
