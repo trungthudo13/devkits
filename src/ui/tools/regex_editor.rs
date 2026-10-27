@@ -73,6 +73,7 @@ impl RegexEditor {
         let mut previous = 0;
         let style = TextFormat {
             font_id: FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
+            line_height: Some(crate::ui::components::code_editor::LINE_HEIGHT),
             color: design::palette(dark).text,
             ..Default::default()
         };
@@ -87,7 +88,7 @@ impl RegexEditor {
                 0.,
                 TextFormat {
                     background: design::palette(dark).primary.bg,
-                    color: design::palette(dark).primary.text,
+                    color: design::palette(dark).primary.on_base,
                     ..style.clone()
                 },
             );

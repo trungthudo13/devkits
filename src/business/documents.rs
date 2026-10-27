@@ -83,7 +83,17 @@ pub fn process_with_sql_options(
     }
     match lang {
         Language::Json => {
-            let _: serde_json::Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
+            let repaired;
+            let input = match serde_json::from_str::<serde_json::Value>(input) {
+                Ok(_) => input,
+                Err(_) if action == Action::Format => {
+                    repaired = repair_json_quotes(input)?;
+                    serde_json::from_str::<serde_json::Value>(&repaired)
+                        .map_err(|e| format!("Cannot safely autocorrect JSON: {e}"))?;
+                    &repaired
+                }
+                Err(error) => return Err(error.to_string()),
+            };
             if action == Action::Lint {
                 Ok("Valid JSON. Syntax check passed.".into())
             } else {
@@ -191,6 +201,69 @@ fn align_sql_aliases(input: &str, dialect: &dyn Dialect) -> Result<String, Strin
         start = end;
     }
     Ok(lines.join("\n"))
+}
+
+// Repair quoting only; serde_json still validates structure, escapes and numbers.
+fn repair_json_quotes(input: &str) -> Result<String, String> {
+    if !input.trim_start().starts_with(['{', '[']) {
+        return Err("JSON autocorrection requires an object or array.".into());
+    }
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '"' || c == '\'' {
+            let quote = c;
+            output.push('"');
+            let mut closed = false;
+            while let Some(c) = chars.next() {
+                if c == quote {
+                    closed = true;
+                    break;
+                }
+                if c == '\\' {
+                    let escaped = chars.next().ok_or("Unterminated JSON string escape.")?;
+                    if quote == '\'' && escaped == '\'' {
+                        output.push('\'');
+                    } else {
+                        output.push('\\');
+                        output.push(escaped);
+                    }
+                } else {
+                    if quote == '\'' && c == '"' {
+                        output.push('\\');
+                    }
+                    output.push(c);
+                }
+            }
+            if !closed {
+                return Err("Unterminated JSON string; original input preserved.".into());
+            }
+            output.push('"');
+        } else if c.is_ascii_whitespace() || matches!(c, '{' | '}' | '[' | ']' | ':' | ',') {
+            output.push(c);
+        } else {
+            let mut token = String::from(c);
+            while chars.peek().is_some_and(|c| {
+                !c.is_ascii_whitespace()
+                    && !matches!(c, '{' | '}' | '[' | ']' | ':' | ',' | '"' | '\'')
+            }) {
+                token.push(chars.next().unwrap());
+            }
+            let identifier = (c.is_alphabetic() || matches!(c, '_' | '$'))
+                && token
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '$'));
+            let key = chars.clone().find(|c| !c.is_ascii_whitespace()) == Some(':');
+            if identifier && (key || !matches!(token.as_str(), "true" | "false" | "null")) {
+                output.push('"');
+                output.push_str(&token);
+                output.push('"');
+            } else {
+                output.push_str(&token);
+            }
+        }
+    }
+    Ok(output)
 }
 
 // Transform only whitespace outside strings, retaining duplicate keys and exact numbers.

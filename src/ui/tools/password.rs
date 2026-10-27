@@ -19,13 +19,7 @@ impl DevKits {
             ui.label("Quantity");
             ui.add(egui::DragValue::new(&mut self.password_count).range(1..=1000));
         });
-        if ui
-            .add(design::button(
-                "Generate passwords",
-                design::colors(ui).primary,
-            ))
-            .clicked()
-        {
+        if ui.add(egui::Button::new("Generate passwords")).clicked() {
             match business::passwords(&self.password_options, self.password_count) {
                 Ok(p) => {
                     self.notice_error = false;

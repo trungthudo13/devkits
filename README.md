@@ -14,26 +14,15 @@ An offline desktop toolbox for developers, built with **Rust and egui/eframe**. 
 | QR Generator | Preview QR codes and export PNG files |
 | PDF Extraction | Review/rename embedded images, suggest/crop page regions, extract text, optional offline OCR |
 
-Editors support UTF-8 files, clipboard operations, sample data, line numbers and indentation guides. `Ctrl+Enter` / `Cmd+Enter` formats the current JSON/XML/SQL document. Right-click an editor for its file and validation actions.
+Editors support UTF-8 files, clipboard operations, sample data, line numbers and indentation guides. `Ctrl+Enter` / `Cmd+Enter` formats the current JSON/XML/SQL document. Right-click an editor for its file and validation actions. JSON Format also repairs single-quoted strings and unquoted identifier-like keys/values (for example, `{halo:as,b:1}` becomes valid JSON). Numbers, booleans, null, duplicate keys and existing JSON escapes are preserved. Missing values, broken structure and ambiguous unquoted text such as `hello world` still report an error and leave the editor unchanged. Validate and Compress require strict JSON.
 
-The window uses rounded corners, a thin theme-aware border and a soft shadow over a transparent background. Maximized and fullscreen windows use square edges without the shadow. The custom title bar provides minimize, maximize/restore, close, pin and theme controls. Drag its empty area to move the window; double-click to maximize/restore. Resize from the edges and corners. The embedded editor font is **Noto Sans Mono Regular, 14 pt**, with 20 pt code rows. UI labels use egui's Ubuntu Light with Noto Sans Mono as a Unicode fallback; icons use Phosphor.
+The OS manages the title bar, window buttons, dragging, resizing, borders, corners and shadows. On macOS this restores the standard system window controls. Sidebar visibility, Always on top and Light/Dark/System theme choices are available in the application toolbar.
+
+The UI follows the system light/dark preference and uses egui's default widget colors. Content widgets are rendered by egui, not native AppKit/Win32 controls. UI and editor fonts are loaded from the OS: SF/SF Mono on macOS (Helvetica/Menlo fallback), Segoe UI/Consolas on Windows, and Fontconfig sans-serif/monospace on Linux. Body text, buttons and monospace fields use 14 pt; headings remain 18 pt. Code rows and navigation text use a 21 pt line height. Navigation items are left-aligned with 1 pt top/bottom margins, 4 pt top/bottom padding, square corners and 1 pt hover/selection borders. Bundled fonts, including Noto Sans Mono, remain as fallbacks for missing fonts or glyphs; Phosphor icons are preserved. Font changes take effect after restarting the app.
 
 ## Color system
 
-DevKits adapts the official [Bootstrap 5.3 color tokens](https://getbootstrap.com/docs/5.3/customize/css-variables/) to native egui widgets. It does not load Bootstrap CSS or a web runtime. All application colors live in `src/ui/design.rs`.
-
-| Role | Base | Light text emphasis | Dark text emphasis | Usage |
-| --- | --- | --- | --- | --- |
-| `primary` | `#0D6EFD` | `#052C65` | `#6EA8FE` | Main actions, selection, focus |
-| `secondary` | `#6C757D` | `#2B2F32` | `#A7ACB1` | Supporting actions |
-| `success` | `#198754` | `#0A3622` | `#75B798` | Completed actions, suggested PDF regions |
-| `warning` | `#FFC107` | `#664D03` | `#FFDA6A` | Warnings requiring attention |
-| `danger` | `#DC3545` | `#58151C` | `#EA868F` | Errors and close-button hover |
-| `info` | `#0DCAF0` | `#055160` | `#6EDFF6` | Progress and guidance |
-
-Each role includes `base`, `on_base`, `text`, `bg` and `border`. The base colors stay stable; text emphasis, subtle backgrounds and borders adapt to light/dark mode. Surfaces use Bootstrap's body/tertiary/secondary backgrounds. Muted labels use opaque gray-700 (light) or gray-500 (dark) to preserve contrast. Syntax colors are a DevKits mapping: primary for keys/tags/keywords, success for strings, warning for numbers, muted for comments and line numbers. QR image pixels retain their original black/white values.
-
-Use `design::palette(dark)` or `design::colors(ui)` instead of hard-coded RGB values. `design::button` and `design::notice` provide semantic actions and messages. Tests check a minimum 4.5:1 contrast for role text on its subtle background and body surface, solid-button labels, and normal/muted text on the three surfaces. This checks those color pairs, not a full accessibility certification.
+`src/ui/design.rs` derives shared colors from egui's default visuals, including selection, warning and error colors. No Bootstrap theme overrides are applied. QR image pixels retain their original black/white values.
 
 ## PDF workflow
 

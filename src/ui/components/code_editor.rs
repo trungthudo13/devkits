@@ -1,7 +1,7 @@
 use eframe::egui::{self, text::LayoutJob, FontId, Stroke};
 
 pub const FONT_SIZE: f32 = 14.;
-pub const LINE_HEIGHT: f32 = 20.;
+pub const LINE_HEIGHT: f32 = 21.;
 
 pub fn code_editor(
     ui: &mut egui::Ui,

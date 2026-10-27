@@ -33,10 +33,7 @@ impl DevKits {
             self.notice.clear();
         }
         ui.horizontal(|ui| {
-            if ui
-                .add(design::button("Generate QR", design::colors(ui).primary))
-                .clicked()
-            {
+            if ui.add(egui::Button::new("Generate QR")).clicked() {
                 match business::qr_png(
                     &self.qr_input,
                     [

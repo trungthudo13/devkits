@@ -194,10 +194,10 @@ impl DevKits {
             egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
             |ui| {
                 if ui
-                    .add(design::button(
-                        format!("{} Format", icons::BRACKETS_CURLY),
-                        design::colors(ui).primary,
-                    ))
+                    .add(egui::Button::new(format!(
+                        "{} Format",
+                        icons::BRACKETS_CURLY
+                    )))
                     .on_hover_text("Ctrl/Cmd + Enter")
                     .clicked()
                 {
@@ -341,7 +341,7 @@ impl DevKits {
                                 };
                                 if ui
                                     .add(
-                                        egui::Label::new(layout(&line, self.dark))
+                                        egui::Label::new(layout(&line, ui.visuals().dark_mode))
                                             .sense(egui::Sense::click()),
                                     )
                                     .on_hover_text("Click code to expand all blocks and edit")
@@ -353,8 +353,11 @@ impl DevKits {
                                 ui.add_space(16.);
                                 if ui
                                     .add(
-                                        egui::Label::new(layout(lines[row], self.dark))
-                                            .sense(egui::Sense::click()),
+                                        egui::Label::new(layout(
+                                            lines[row],
+                                            ui.visuals().dark_mode,
+                                        ))
+                                        .sense(egui::Sense::click()),
                                     )
                                     .on_hover_text("Click code to expand all blocks and edit")
                                     .clicked()
@@ -437,6 +440,25 @@ mod tests {
         assert!(app.docs[0].error);
         assert_eq!(app.docs[0].input, "{bad}");
     }
+    #[test]
+    fn json_format_repairs_input_and_preserves_it_on_failure() {
+        let mut app = DevKits::default();
+        app.docs[0].input = "{halo:as,b:1}".into();
+        app.docs[0].error = true;
+        app.docs[0].message = "Previous error".into();
+        app.json_collapsed.insert(0);
+        app.json_action(Action::Format);
+        assert_eq!(app.docs[0].input, "{\n  \"halo\": \"as\",\n  \"b\": 1\n}");
+        assert!(!app.docs[0].error);
+        assert!(app.docs[0].message.is_empty());
+        assert!(app.json_collapsed.is_empty());
+        app.docs[0].input = "{halo:two words,b:1}".into();
+        app.json_action(Action::Format);
+        assert_eq!(app.docs[0].input, "{halo:two words,b:1}");
+        assert!(app.docs[0].error);
+        assert!(!app.docs[0].message.is_empty());
+    }
+
     #[test]
     fn folding_preserves_original_line_numbers_and_ignores_quoted_brackets() {
         let text = "{\n  \"a\": [\n    \"}\\\"[\",\n    {}\n  ],\n  \"b\": true\n}";

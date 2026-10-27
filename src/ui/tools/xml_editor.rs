@@ -114,10 +114,7 @@ impl DevKits {
             egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
             |ui| {
                 if ui
-                    .add(design::button(
-                        format!("{} Format", icons::CODE),
-                        design::colors(ui).primary,
-                    ))
+                    .add(egui::Button::new(format!("{} Format", icons::CODE)))
                     .on_hover_text("Ctrl/Cmd + Enter")
                     .clicked()
                 {

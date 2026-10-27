@@ -201,3 +201,67 @@ fn password_batch_limits_and_constraints() {
     )
     .is_err());
 }
+
+#[test]
+fn json_format_autocorrects_quotes_without_changing_values() {
+    for (input, expected) in [
+        (r#"{ halo: "as", b:1 }"#, r#"{"halo":"as","b":1}"#),
+        (r#"{"halo":as, b:1}"#, r#"{"halo":"as","b":1}"#),
+        ("{ halo:as, b:1}", r#"{"halo":"as","b":1}"#),
+        ("{'halo':'a', 'b':1}", r#"{"halo":"a","b":1}"#),
+        (
+            "{nested:[{name:hello},true,false,null,-1.20e+3],true:null}",
+            r#"{"nested":[{"name":"hello"},true,false,null,-1.20e+3],"true":null}"#,
+        ),
+        (
+            "{x:1,x:2,large:12345678901234567890123456789}",
+            r#"{"x":1,"x":2,"large":12345678901234567890123456789}"#,
+        ),
+        (
+            r#"{tên:'Tiếng Việt', text:'it\'s "ok" \\ \n \u0041', other:"a\\b\"c"}"#,
+            r#"{"tên":"Tiếng Việt","text":"it's \"ok\" \\ \n \u0041","other":"a\\b\"c"}"#,
+        ),
+    ] {
+        let formatted = run(input, Language::Json, Action::Format).unwrap();
+        assert_eq!(
+            run(&formatted, Language::Json, Action::Minify).unwrap(),
+            expected,
+            "{input}"
+        );
+        assert_eq!(
+            run(&formatted, Language::Json, Action::Format).unwrap(),
+            formatted
+        );
+        assert!(run(input, Language::Json, Action::Lint).is_err());
+        assert!(run(input, Language::Json, Action::Minify).is_err());
+    }
+}
+
+#[test]
+fn json_autocorrect_rejects_ambiguous_or_broken_input() {
+    for input in [
+        "{a:}",
+        "{a:hello world}",
+        "{a:hello b:1}",
+        "{a:'unfinished}",
+        r#"{a:"bad\q"}"#,
+        r#"{a:'bad\q'}"#,
+        "{a:01}",
+        "{a:1e}",
+        "{a:1,}",
+        "{a:hello",
+        "{a:hello]",
+        "{a:hello} garbage",
+        "{a:foo()} ",
+        "{a:'raw\nnewline'}",
+        "plain_text",
+        "{a:/* comment */hello}",
+    ] {
+        assert!(
+            run(input, Language::Json, Action::Format).is_err(),
+            "{input}"
+        );
+    }
+    let deeply_nested = format!("{}hello{}", "[".repeat(200), "]".repeat(200));
+    assert!(run(&deeply_nested, Language::Json, Action::Format).is_err());
+}

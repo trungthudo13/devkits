@@ -111,38 +111,31 @@ impl DevKits {
             .text_styles
             .insert(egui::TextStyle::Body, FontId::proportional(14.));
 
-        let compact = ui.available_width() < 700.;
         ui.allocate_ui_with_layout(
             egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
             egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
             |ui| {
                 if ui
-                    .add_sized(
-                        [76., 22.],
-                        design::button(
-                            format!("{} Beautify", icons::BRACKETS_CURLY),
-                            design::colors(ui).primary,
-                        ),
-                    )
+                    .add(egui::Button::new(format!(
+                        "{} Beautify",
+                        icons::BRACKETS_CURLY
+                    )))
                     .on_hover_text("Ctrl/Cmd + Enter")
                     .clicked()
                 {
                     self.sql_action(Action::Format);
                 }
                 if ui
-                    .add_sized(
-                        [96., 22.],
-                        egui::Button::new(format!("{} Compression", icons::ARROWS_IN)),
-                    )
+                    .add(egui::Button::new(format!(
+                        "{} Compression",
+                        icons::ARROWS_IN
+                    )))
                     .clicked()
                 {
                     self.sql_action(Action::Minify);
                 }
                 if ui
-                    .add_sized(
-                        [80., 22.],
-                        egui::Button::new(format!("{} Clipboard", icons::CLIPBOARD)),
-                    )
+                    .add(egui::Button::new(format!("{} Clipboard", icons::CLIPBOARD)))
                     .on_hover_text("Paste SQL from the system clipboard")
                     .clicked()
                 {
@@ -164,23 +157,14 @@ impl DevKits {
                     }
                 }
                 if ui
-                    .add_sized(
-                        [68., 22.],
-                        egui::Button::new(format!("{} Example", icons::FLASK)),
-                    )
+                    .add(egui::Button::new(format!("{} Example", icons::FLASK)))
                     .clicked()
                 {
                     self.docs[2].input = EXAMPLE.into();
                     self.sql_action(Action::Format);
                 }
-                if compact {
-                    ui.end_row();
-                }
-                let previous_wrap_mode = ui.style().wrap_mode;
-                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.checkbox(&mut self.sql_alias_align, "Alias align");
                 ui.checkbox(&mut self.sql_uppercase, "Keyword uppercase");
-                ui.style_mut().wrap_mode = previous_wrap_mode;
                 egui::ComboBox::from_id_salt("sql-dialect")
                     .width(78.)
                     .selected_text(match self.dialect {

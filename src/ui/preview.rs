@@ -58,8 +58,7 @@ impl DevKits {
                     }
                 }
                 if std::env::var("DEVKITS_CAPTURE_DARK").is_ok() {
-                    self.dark = true;
-                    theme(ctx, true);
+                    ctx.set_theme(egui::ThemePreference::Dark);
                 }
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
                 self.capture_requested = true;

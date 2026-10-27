@@ -310,7 +310,7 @@ impl PdfEditor {
                 if ui
                     .add_enabled(
                         !self.cancel.load(Ordering::Relaxed),
-                        design::button("Cancel", design::colors(ui).secondary),
+                        egui::Button::new("Cancel"),
                     )
                     .clicked()
                 {
@@ -394,10 +394,7 @@ impl PdfEditor {
             if ui
                 .add_enabled(
                     self.job.is_none() && count > 0,
-                    design::button(
-                        format!("Export selected ({count})…"),
-                        design::colors(ui).primary,
-                    ),
+                    egui::Button::new(format!("Export selected ({count})…")),
                 )
                 .clicked()
             {

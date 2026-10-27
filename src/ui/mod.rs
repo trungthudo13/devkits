@@ -40,7 +40,6 @@ struct DevKits {
     dialect: SqlDialect,
     sql_uppercase: bool,
     sql_alias_align: bool,
-    dark: bool,
     password_options: PasswordOptions,
     password_count: usize,
     secrets: Vec<String>,
@@ -72,7 +71,6 @@ impl Default for DevKits {
             dialect: SqlDialect::MySql,
             sql_uppercase: true,
             sql_alias_align: true,
-            dark: false,
             password_options: PasswordOptions::default(),
             password_count: 1,
             secrets: Vec::new(),
@@ -87,21 +85,6 @@ impl Default for DevKits {
             capture_requested: false,
         }
     }
-}
-fn theme(ctx: &egui::Context, dark: bool) {
-    ctx.set_visuals(design::visuals(dark));
-    ctx.style_mut(|s| {
-        s.text_styles
-            .insert(egui::TextStyle::Body, egui::FontId::proportional(13.));
-        s.text_styles
-            .insert(egui::TextStyle::Button, egui::FontId::proportional(13.));
-        s.text_styles.insert(
-            egui::TextStyle::Monospace,
-            egui::FontId::monospace(crate::ui::components::code_editor::FONT_SIZE),
-        );
-        s.spacing.item_spacing = egui::vec2(10., 10.);
-        s.spacing.button_padding = egui::vec2(12., 6.);
-    });
 }
 impl DevKits {
     fn open(&mut self) {

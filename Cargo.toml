@@ -6,6 +6,7 @@ description = "Offline native developer utilities"
 license = "MIT"
 
 [dependencies]
+ab_glyph = "0.2"
 regex = "1.12"
 egui-phosphor = "0.9"
 arboard = { version = "3.6", default-features = false }
