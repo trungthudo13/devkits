@@ -1,6 +1,6 @@
 [package]
 name = "self-devkits"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Offline native developer utilities"
 license = "MIT"

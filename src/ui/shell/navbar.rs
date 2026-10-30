@@ -65,7 +65,7 @@ fn nav_item(ui: &mut egui::Ui, tool: Tool, selected: bool) -> egui::Response {
         let color = visuals.text_color();
         if selected || response.hovered() || response.highlighted() || response.has_focus() {
             let border = if selected {
-                egui::Stroke::new(1., ui.visuals().selection.bg_fill)
+                egui::Stroke::new(1_f32, ui.visuals().selection.bg_fill)
             } else if response.has_focus() {
                 visuals.bg_stroke
             } else {
