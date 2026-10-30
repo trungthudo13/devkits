@@ -10,6 +10,9 @@ An offline desktop toolbox for developers, built with **Rust and egui/eframe**. 
 | XML Editor | Format, minify, validate well-formedness, syntax highlighting |
 | SQL Editor | Format, minify, syntax checking, keyword capitalization, alias alignment |
 | Regex Editor | Live matching, capture groups, substitution and extraction |
+| Cryptographic | MD5, SHA-256, SHA-512, Argon2id hash/verify; AES-256-GCM, RSA-OAEP-SHA256 age and SOPS + age encrypt/decrypt |
+| Base64 | UTF-8 encode/decode, standard/URL-safe alphabets, random `ENCRYPTION_KEY_BASE64` generation |
+| Keygen | RSA 2048/3072/4096-bit PEM keypairs, age X25519 identities/recipients, AES-256 Base64 keys |
 | Random Password | Generate 1–1,000 passwords with configurable character groups |
 | QR Generator | Preview QR codes and export PNG files |
 | PDF Extraction | Review/rename embedded images, suggest/crop page regions, extract text, optional offline OCR |
@@ -95,6 +98,26 @@ cargo run --locked --example extract_pdf_images -- "menu.pdf" "output-folder"
 - SQL supports Generic, MySQL, PostgreSQL and SQLite syntax. Rewrites are checked against the parsed syntax tree. No queries are executed and database schemas are not checked.
 - Regex uses Rust `regex`, not PCRE2; pattern look-around and backreferences are unsupported. Replacement capture references are supported. Limits: 128 KiB input, 4 KiB pattern, 1,000 matches, 64 capture groups, 2 MiB output.
 - Passwords use the operating system random source, support lengths of 8–128 characters and include at least one character from every selected group.
+
+## Base64 and encryption keys
+
+Open **Base64 → Generate key** to create `ENCRYPTION_KEY_BASE64`. The default generates **32 random bytes (256 bits)** from the OS random source, then encodes them as standard padded Base64 (44 characters). Other sizes: 16, 24 and 64 bytes. Match the byte length to your application's cipher. Copy either the raw value or the complete `ENCRYPTION_KEY_BASE64=…` assignment. Keys are hidden by default and are not automatically saved.
+
+The **Encode** and **Decode** header tabs convert UTF-8 text using standard or URL-safe Base64. Decoding accepts ASCII whitespace and unpadded input; invalid encodings are rejected. Binary output is shown as hex with its decoded byte count. Base64 is an encoding, not encryption. Text/decoded data is limited to 2 MiB and encoded input to 4 MiB.
+
+## Cryptographic and Keygen
+
+Open **Keygen** to generate RSA, age or AES keys. Public and private outputs have separate copy actions; private keys are hidden until revealed. Nothing is automatically saved. Use those keys in **Cryptographic → Symmetric / Asymmetric**, select Encrypt or Decrypt, paste UTF-8 text or ciphertext, and run. “Use result as input” switches direction; for asymmetric encryption, supply the corresponding public/private key. Expensive operations run in a background thread.
+
+- **Hashing:** MD5, SHA-256 and SHA-512 produce lowercase hex digests of the exact UTF-8 input. MD5 is for legacy checksums, not password storage or security.
+- **Argon2id:** generates a random 16-byte salt and a 32-byte hash, encoded as a `$argon2id$v=19$…` PHC string. Defaults: 19456 KiB memory, 2 iterations, parallelism 1. Parameters are editable; verification reads them from the PHC string. Limits: 262144 KiB, 10 iterations, parallelism 8, with at least 8 × parallelism KiB of memory.
+- **AES-256-GCM:** accepts a Base64-encoded 32-byte key. Encryption generates a fresh 12-byte nonce and outputs `devkits:aes256gcm:v1:` followed by Base64 of `nonce || ciphertext || 16-byte tag`. Decryption rejects changed ciphertext or an incorrect key. This is a DevKits text envelope, not an OpenSSL file format.
+- **RSA-OAEP:** SHA-256 for OAEP and MGF1, empty label. Public keys are SPKI PEM (`BEGIN PUBLIC KEY`); private keys are unencrypted PKCS#8 PEM (`BEGIN PRIVATE KEY`). Ciphertext is standard Base64. Maximum plaintext: 190/318/446 bytes for 2048/3072/4096-bit keys; use AES or age for larger text. Encrypted PEM and SSH key formats are not supported.
+- **SOPS + age:** select YAML, JSON, `.env` or INI and paste the complete document, including its `sops` metadata. Decryption accepts one or more native age identities, one per line; comments from `age-keygen` files are accepted. Encryption accepts native age recipients, one per line. Requires the `sops` CLI (3.13+, available on PATH; macOS: `brew install sops`). The official CLI verifies the document MAC; plaintext and documents use stdin/stdout pipes, not temporary data files. SOPS input/output is limited to 8 MiB, with a 30-second timeout. Temporary folders contain only an empty configuration and empty key-source file. Missing SOPS, incorrect keys, wrong formats and damaged documents produce errors. Raw age mode detects SOPS ciphertext and directs you to this mode. See [SOPS stdin/stdout integration](https://getsops.io/docs/usage/advanced/).
+- **age:** native X25519 `age1…` recipients and `AGE-SECRET-KEY-1…` identities, with standard ASCII-armored messages. This tool accepts one recipient/identity at a time; passphrase, SSH and post-quantum identities are not supported.
+- Plaintext/hashing input is limited to 2 MiB, encoded AES/age input to 4 MiB, and key input to 16 KiB. Decrypted results must be UTF-8. Files and binary input are not supported in these tools.
+
+Implementation references: [RustCrypto Argon2](https://docs.rs/argon2/0.5.3/argon2/), [AES-GCM](https://docs.rs/aes-gcm/0.10.3/aes_gcm/), [RSA](https://docs.rs/rsa/0.9.10/rsa/), and [age](https://docs.rs/age/0.11.5/age/).
 
 ## Run from source
 

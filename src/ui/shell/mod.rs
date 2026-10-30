@@ -30,6 +30,9 @@ impl DevKits {
                             Tool::Password => self.password_ui(ui),
                             Tool::Qr => self.qr_ui(ui),
                             Tool::Pdf => self.pdf.ui(ui),
+                            Tool::Cryptographic => self.cryptographic.ui(ui),
+                            Tool::Keygen => self.keygen.ui(ui),
+                            Tool::Base64 => self.base64.ui(ui),
                         }
                     });
             });
@@ -105,6 +108,12 @@ mod tests {
                     format!("{} Beautify", icons::BRACKETS_CURLY)
                 } else if tool == Tool::Regex {
                     "Match".to_owned()
+                } else if tool == Tool::Cryptographic {
+                    "Hashing".to_owned()
+                } else if tool == Tool::Keygen {
+                    "RSA".to_owned()
+                } else if tool == Tool::Base64 {
+                    "Generate key".to_owned()
                 } else {
                     tool.title().to_owned()
                 };

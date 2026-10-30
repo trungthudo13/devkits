@@ -2,7 +2,16 @@ use super::*;
 impl DevKits {
     pub(super) fn body_header(&mut self, ui: &mut egui::Ui) {
         let panel = egui::TopBottomPanel::top("body-header").show_separator_line(false);
-        let panel = if matches!(self.tool, Tool::Json | Tool::Xml | Tool::Sql | Tool::Regex) {
+        let panel = if matches!(
+            self.tool,
+            Tool::Json
+                | Tool::Xml
+                | Tool::Sql
+                | Tool::Regex
+                | Tool::Cryptographic
+                | Tool::Keygen
+                | Tool::Base64
+        ) {
             panel.min_height(0.).default_height(44.)
         } else {
             panel.exact_height(66.)
@@ -27,6 +36,12 @@ impl DevKits {
                     self.sql_toolbar(ui);
                 } else if self.tool == Tool::Regex {
                     self.regex.toolbar(ui);
+                } else if self.tool == Tool::Cryptographic {
+                    self.cryptographic.toolbar(ui);
+                } else if self.tool == Tool::Keygen {
+                    self.keygen.toolbar(ui);
+                } else if self.tool == Tool::Base64 {
+                    self.base64.toolbar(ui);
                 } else {
                     ui.heading(self.tool.title());
                     ui.colored_label(design::colors(ui).muted, self.tool.description());
@@ -41,7 +56,15 @@ mod tests {
 
     #[test]
     fn toolbars_keep_whole_labels_on_aligned_rows() {
-        for tool in [Tool::Json, Tool::Xml, Tool::Sql, Tool::Regex] {
+        for tool in [
+            Tool::Json,
+            Tool::Xml,
+            Tool::Sql,
+            Tool::Regex,
+            Tool::Cryptographic,
+            Tool::Keygen,
+            Tool::Base64,
+        ] {
             for width in [600., 780., 1100.] {
                 let ctx = egui::Context::default();
                 bootstrap::configure_typography(&ctx);

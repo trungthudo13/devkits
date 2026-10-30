@@ -51,6 +51,15 @@ impl DevKits {
                     ));
                     self.qr_image = Some(img);
                 }
+                if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("cryptographic") {
+                    self.tool = Tool::Cryptographic;
+                }
+                if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("base64") {
+                    self.tool = Tool::Base64;
+                }
+                if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("keygen") {
+                    self.tool = Tool::Keygen;
+                }
                 if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("pdf") {
                     self.tool = Tool::Pdf;
                     if let Some(path) = std::env::var_os("DEVKITS_CAPTURE_PDF") {

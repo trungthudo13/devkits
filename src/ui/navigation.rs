@@ -8,9 +8,12 @@ pub(super) enum Tool {
     Qr,
     Regex,
     Pdf,
+    Cryptographic,
+    Keygen,
+    Base64,
 }
 impl Tool {
-    pub(super) const ALL: [Self; 7] = [
+    pub(super) const ALL: [Self; 10] = [
         Self::Json,
         Self::Sql,
         Self::Xml,
@@ -18,6 +21,9 @@ impl Tool {
         Self::Password,
         Self::Qr,
         Self::Pdf,
+        Self::Cryptographic,
+        Self::Keygen,
+        Self::Base64,
     ];
     pub(super) fn title(self) -> &'static str {
         match self {
@@ -28,6 +34,9 @@ impl Tool {
             Self::Qr => "QR Generator",
             Self::Regex => "Regex Editor",
             Self::Pdf => "PDF Extraction",
+            Self::Cryptographic => "Cryptographic",
+            Self::Keygen => "Keygen",
+            Self::Base64 => "Base64",
         }
     }
     pub(super) fn description(self) -> &'static str {
@@ -39,6 +48,9 @@ impl Tool {
             Self::Password => "Generate secure passwords locally.",
             Self::Qr => "Create QR codes and export PNG images.",
             Self::Pdf => "Extract images and text, crop regions and run offline OCR.",
+            Self::Cryptographic => "Hash, verify passwords, encrypt and decrypt text locally.",
+            Self::Keygen => "Generate RSA, age and AES keys locally.",
+            Self::Base64 => "Encode, decode and generate Base64 encryption keys.",
         }
     }
     pub(super) fn icon(self) -> &'static str {
@@ -50,6 +62,9 @@ impl Tool {
             Self::Password => icons::KEY,
             Self::Qr => icons::QR_CODE,
             Self::Pdf => icons::FILE_PDF,
+            Self::Cryptographic => icons::LOCK_KEY,
+            Self::Keygen => icons::KEY,
+            Self::Base64 => icons::CODE,
         }
     }
     pub(super) fn lang(self) -> Option<Language> {

@@ -9,3 +9,5 @@ pub(crate) mod pdf;
 pub(crate) mod process;
 pub(crate) mod random;
 pub(crate) mod workspace;
+
+pub(crate) mod sops;
