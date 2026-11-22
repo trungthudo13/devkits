@@ -12,6 +12,76 @@ fn json_roundtrip_and_errors() {
         .unwrap_err()
         .contains("line"));
 }
+
+#[test]
+fn json_delimiters_match_nested_pairs_and_ignore_string_contents() {
+    for input in [
+        "",
+        " \n\t",
+        "{}()\"\"[]",
+        "({[\"value\", {}]})",
+        r#"{"text": ")] }{([", "escaped": "say \"hello\""}"#,
+        r#"{"path":"C:\\","next":[]}"#,
+        r#"{"tên":"Tiếng Việt 🙂", "items":[true,null,{}]}"#,
+    ] {
+        assert_eq!(validate_json_delimiters(input), Ok(()), "{input}");
+    }
+    // An odd backslash run escapes the quote; an even run lets it close.
+    for count in 0..8 {
+        let input = format!("\"{}\"", "\\".repeat(count));
+        assert_eq!(validate_json_delimiters(&input).is_ok(), count % 2 == 0);
+        let input = format!("\"{}\"\"", "\\".repeat(count));
+        assert_eq!(validate_json_delimiters(&input).is_ok(), count % 2 == 1);
+    }
+}
+
+#[test]
+fn json_delimiters_report_unexpected_mismatched_and_unclosed_pairs() {
+    for close in ['}', ')', ']'] {
+        assert_eq!(
+            validate_json_delimiters(&close.to_string()).unwrap_err(),
+            format!("Unexpected '{close}' at line 1, column 1; no matching opening delimiter.")
+        );
+    }
+    for (input, expected) in [
+        ("([)]", "Unexpected ')' at line 1, column 3; expected ']' to close '[' from line 1, column 2."),
+        ("{]", "Unexpected ']' at line 1, column 2; expected '}' to close '{' from line 1, column 1."),
+        ("[(]", "Unexpected ']' at line 1, column 3; expected ')' to close '(' from line 1, column 2."),
+        ("{\n  \"tên\": [1, 2)\n}", "Unexpected ')' at line 2, column 15; expected ']' to close '[' from line 2, column 10."),
+        ("\"🙂\" ]", "Unexpected ']' at line 1, column 5; no matching opening delimiter."),
+        ("{\r\n  [\r\n  }", "Unexpected '}' at line 3, column 3; expected ']' to close '[' from line 2, column 3."),
+        ("{\n  [\n", "Unclosed '[' at line 2, column 3; expected ']' before end of input."),
+        ("{", "Unclosed '{' at line 1, column 1; expected '}' before end of input."),
+        ("(", "Unclosed '(' at line 1, column 1; expected ')' before end of input."),
+        ("\"abc", "Unclosed '\"' at line 1, column 1; expected '\"' before end of input."),
+    ] {
+        assert_eq!(validate_json_delimiters(input).unwrap_err(), expected, "{input}");
+    }
+}
+
+#[test]
+fn json_delimiters_handle_deep_nesting_iteratively_and_enforce_input_limit() {
+    let nested = format!("{}{}", "[({".repeat(30_000), "})]".repeat(30_000));
+    assert_eq!(validate_json_delimiters(&nested), Ok(()));
+    assert!(validate_json_delimiters(&nested[..nested.len() - 1])
+        .unwrap_err()
+        .starts_with("Unclosed '[' at line 1, column 1;"));
+    assert_eq!(validate_json_delimiters(&" ".repeat(MAX_INPUT)), Ok(()));
+    assert!(validate_json_delimiters(&" ".repeat(MAX_INPUT + 1))
+        .unwrap_err()
+        .contains("2 MiB"));
+}
+
+#[test]
+fn balanced_delimiters_do_not_replace_strict_json_validation() {
+    for input in ["()", "([{}])", "{bad}", "{\"a\":}", "[1,]", r#""bad\q""#] {
+        assert_eq!(validate_json_delimiters(input), Ok(()), "{input}");
+        for action in [Action::Lint, Action::Minify] {
+            assert!(run(input, Language::Json, action).is_err(), "{input}");
+        }
+    }
+}
+
 #[test]
 fn xml_preserves_content_and_rejects_invalid() {
     for input in [

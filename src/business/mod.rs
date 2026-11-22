@@ -6,6 +6,7 @@ pub mod password;
 pub mod pdf;
 pub mod qr;
 pub mod regex;
+pub mod text_diff;
 pub use documents::*;
 pub use password::{password, passwords, PasswordOptions};
 pub use qr::qr_png;

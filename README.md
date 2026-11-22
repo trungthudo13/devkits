@@ -10,6 +10,7 @@ An offline desktop toolbox for developers, built with **Rust and egui/eframe**. 
 | XML Editor | Format, minify, validate well-formedness, syntax highlighting |
 | SQL Editor | Format, minify, syntax checking, keyword capitalization, alias alignment |
 | Regex Editor | Live matching, capture groups, substitution and extraction |
+| Text Diff | Compare text lines side by side, highlight additions and removals |
 | Cryptographic | MD5, SHA-256, SHA-512, Argon2id hash/verify; AES-256-GCM, RSA-OAEP-SHA256 age and SOPS + age encrypt/decrypt |
 | Base64 | UTF-8 encode/decode, standard/URL-safe alphabets, random `ENCRYPTION_KEY_BASE64` generation |
 | Keygen | RSA 2048/3072/4096-bit PEM keypairs, age X25519 identities/recipients, AES-256 Base64 keys |
@@ -18,6 +19,12 @@ An offline desktop toolbox for developers, built with **Rust and egui/eframe**. 
 | PDF Extraction | Review/rename embedded images, suggest/crop page regions, extract text, optional offline OCR |
 
 Editors support UTF-8 files, clipboard operations, sample data, line numbers and indentation guides. `Ctrl+Enter` / `Cmd+Enter` formats the current JSON/XML/SQL document. Right-click an editor for its file and validation actions. JSON Format also repairs single-quoted strings and unquoted identifier-like keys/values (for example, `{halo:as,b:1}` becomes valid JSON). Numbers, booleans, null, duplicate keys and existing JSON escapes are preserved. Missing values, broken structure and ambiguous unquoted text such as `hello world` still report an error and leave the editor unchanged. Validate and Compress require strict JSON.
+
+JSON Editor checks `{}`, `()`, `""` and `[]` pairs as you edit using a stack (iterative Depth-First Search). It reports missing or mismatched delimiters with line and column positions, ignoring brackets inside double-quoted strings and handling escaped quotes. “Delimiters balanced” describes pairing only; **Validate JSON** still checks full JSON syntax, which does not allow parentheses outside strings.
+
+Open **Text Diff** and enter or load the compared/new text in **Compare — Left** and the original in **Original — Right**. Each side has Open, Paste and Copy; copying retains the exact source. **Compare** switches the same two sections to an aligned view: green `+` lines were added on the left, red `−` lines were removed from the original on the right. Changed lines show both colors, with gaps where only one side has a line. Vertical scrolling is shared and horizontal scrolling is independent. **Edit** returns to the source texts; **Example** loads a sample and **Clear** resets both sides.
+
+Text Diff compares whole lines using an explicit stack and iterative Hirschberg LCS, so inserting a line does not mark all following lines as changed. Case, spaces, tabs, blank lines and Unicode are significant. LF and CRLF are treated as equivalent without modifying source text; lone CR characters remain significant and are displayed as `\r`. A changed final newline is marked with `No newline at end of file`. Comparison runs in the background, with editing disabled until it finishes. Each side accepts up to 2 MiB; unusually complex comparisons that would exceed 50 million line comparisons return an error and keep both source texts.
 
 The OS manages the title bar, window buttons, dragging, resizing, borders, corners and shadows. On macOS this restores the standard system window controls. Sidebar visibility, Always on top and Light/Dark/System theme choices are available in the application toolbar.
 

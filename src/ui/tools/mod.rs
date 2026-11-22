@@ -5,6 +5,7 @@ pub(super) mod pdf_editor;
 mod qr;
 pub(super) mod regex_editor;
 pub(super) mod sql_editor;
+pub(super) mod text_diff;
 pub(super) mod xml_editor;
 
 mod crypto_job;

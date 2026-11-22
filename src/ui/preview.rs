@@ -60,6 +60,11 @@ impl DevKits {
                 if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("keygen") {
                     self.tool = Tool::Keygen;
                 }
+                if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("text-diff") {
+                    self.tool = Tool::TextDiff;
+                    self.text_diff
+                        .preview(std::env::var("DEVKITS_TEXT_DIFF_MODE").as_deref() == Ok("edit"));
+                }
                 if std::env::var("DEVKITS_CAPTURE_TOOL").as_deref() == Ok("pdf") {
                     self.tool = Tool::Pdf;
                     if let Some(path) = std::env::var_os("DEVKITS_CAPTURE_PDF") {

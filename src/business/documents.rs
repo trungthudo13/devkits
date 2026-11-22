@@ -50,6 +50,67 @@ pub struct SqlFormatOptions {
     pub alias_align: bool,
 }
 
+/// Check delimiter nesting with an explicit LIFO stack (iterative Depth-First Search).
+/// This checks pairs only; balanced delimiters do not imply valid JSON syntax.
+/// Runs in O(n) time and O(depth) space without recursion.
+pub fn validate_json_delimiters(input: &str) -> Result<(), String> {
+    if input.len() > MAX_INPUT {
+        return Err("Input exceeds the 2 MiB limit.".into());
+    }
+    let mut stack = Vec::new();
+    let mut escaped = false;
+    let (mut line, mut column) = (1usize, 1usize);
+    for c in input.chars() {
+        if stack.last().is_some_and(|&(_, close, _, _)| close == '"') {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                stack.pop();
+            }
+        } else {
+            match c {
+                '{' | '(' | '[' | '"' => {
+                    let close = match c {
+                        '{' => '}',
+                        '(' => ')',
+                        '[' => ']',
+                        _ => '"',
+                    };
+                    stack.push((c, close, line, column));
+                }
+                '}' | ')' | ']' => match stack.pop() {
+                    Some((open, expected, open_line, open_column)) if c != expected => {
+                        return Err(format!(
+                            "Unexpected '{c}' at line {line}, column {column}; expected '{expected}' to close '{open}' from line {open_line}, column {open_column}."
+                        ));
+                    }
+                    None => {
+                        return Err(format!(
+                            "Unexpected '{c}' at line {line}, column {column}; no matching opening delimiter."
+                        ));
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        if c == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    if let Some((open, expected, line, column)) = stack.pop() {
+        return Err(format!(
+            "Unclosed '{open}' at line {line}, column {column}; expected '{expected}' before end of input."
+        ));
+    }
+    Ok(())
+}
+
 pub fn process(
     input: &str,
     lang: Language,

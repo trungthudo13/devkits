@@ -11,6 +11,7 @@ impl DevKits {
                 | Tool::Cryptographic
                 | Tool::Keygen
                 | Tool::Base64
+                | Tool::TextDiff
         ) {
             panel.min_height(0.).default_height(44.)
         } else {
@@ -42,6 +43,8 @@ impl DevKits {
                     self.keygen.toolbar(ui);
                 } else if self.tool == Tool::Base64 {
                     self.base64.toolbar(ui);
+                } else if self.tool == Tool::TextDiff {
+                    self.text_diff.toolbar(ui);
                 } else {
                     ui.heading(self.tool.title());
                     ui.colored_label(design::colors(ui).muted, self.tool.description());
@@ -64,6 +67,7 @@ mod tests {
             Tool::Cryptographic,
             Tool::Keygen,
             Tool::Base64,
+            Tool::TextDiff,
         ] {
             for width in [600., 780., 1100.] {
                 let ctx = egui::Context::default();

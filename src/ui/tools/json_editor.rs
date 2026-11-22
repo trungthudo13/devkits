@@ -137,6 +137,36 @@ fn visible_rows(
     result
 }
 
+fn delimiter_status(ui: &mut egui::Ui, text: &str, notice: &str) {
+    if text.trim().is_empty() {
+        return;
+    }
+    let key = egui::util::hash(text);
+    let id = egui::Id::new("json-delimiter-status");
+    let cached = ui
+        .ctx()
+        .data_mut(|data| data.get_temp::<(u64, Result<(), String>)>(id));
+    let result = match cached {
+        Some((previous, result)) if previous == key => result,
+        _ => {
+            let result = business::validate_json_delimiters(text);
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(id, (key, result.clone())));
+            result
+        }
+    };
+    let colors = design::colors(ui);
+    let (color, message) = match result {
+        Ok(()) => (colors.success.text, "Delimiters balanced".into()),
+        Err(error) => (colors.danger.text, error),
+    };
+    if message != notice {
+        ui.colored_label(color, message).on_hover_text(
+            "Checks pairs: {} () \"\" []. Use Validate JSON to check full JSON syntax.",
+        );
+    }
+}
+
 impl DevKits {
     pub fn json_action(&mut self, action: Action) {
         let doc = &mut self.docs[0];
@@ -160,7 +190,9 @@ impl DevKits {
             }
             Err(e) => {
                 doc.error = true;
-                doc.message = e;
+                doc.message = business::validate_json_delimiters(&doc.input)
+                    .err()
+                    .unwrap_or(e);
             }
         }
     }
@@ -273,6 +305,7 @@ impl DevKits {
                 &self.docs[0].message,
             );
         }
+        delimiter_status(ui, &self.docs[0].input, &self.docs[0].message);
         let ranges = if self.json_simple {
             Vec::new()
         } else {
@@ -374,6 +407,8 @@ impl DevKits {
         if response.changed() {
             self.json_collapsed.clear();
             self.docs[0].message.clear();
+            self.docs[0].error = false;
+            ui.ctx().request_repaint();
         }
         response.context_menu(|ui| {
             if ui.button("Example").clicked() {
@@ -457,6 +492,79 @@ mod tests {
         assert_eq!(app.docs[0].input, "{halo:two words,b:1}");
         assert!(app.docs[0].error);
         assert!(!app.docs[0].message.is_empty());
+    }
+
+    #[test]
+    fn json_actions_report_delimiter_errors_without_changing_source() {
+        let input = "{\n  \"items\": [1, 2)\n}";
+        let expected = business::validate_json_delimiters(input).unwrap_err();
+        let mut app = DevKits::default();
+        for action in [Action::Format, Action::Minify, Action::Lint] {
+            app.docs[0].input = input.into();
+            app.json_action(action);
+            assert!(app.docs[0].error);
+            assert_eq!(app.docs[0].message, expected);
+            assert_eq!(app.docs[0].input, input);
+        }
+        // Format can repair single-quoted strings containing unpaired delimiters.
+        app.docs[0].input = r#"{text:'"}])(', path:'C:\\'}"#.into();
+        app.json_action(Action::Format);
+        assert!(!app.docs[0].error, "{}", app.docs[0].message);
+        let value: serde_json::Value = serde_json::from_str(&app.docs[0].input).unwrap();
+        assert_eq!(value["text"], "\"}])(");
+        assert_eq!(value["path"], "C:\\");
+    }
+
+    #[test]
+    fn json_editor_refreshes_delimiter_feedback_in_simple_and_folded_views() {
+        let ctx = egui::Context::default();
+        let mut app = DevKits::default();
+        for simple in [false, true] {
+            app.json_simple = simple;
+            for input in ["([)]", "([])", "([)]", "", "{\n  \"items\": []\n}"] {
+                app.docs[0].input = input.into();
+                app.json_collapsed.insert(0);
+                let output = ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| app.json_ui(ui));
+                });
+                let labels: Vec<_> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) => Some(text.galley.job.text.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                if input.is_empty() {
+                    assert!(!labels
+                        .iter()
+                        .any(|text| text.contains("Delimiters") || text.contains("Unexpected")));
+                } else {
+                    let expected = business::validate_json_delimiters(input)
+                        .err()
+                        .unwrap_or_else(|| "Delimiters balanced".into());
+                    assert!(labels.contains(&expected.as_str()), "{labels:?}");
+                }
+                assert_eq!(app.docs[0].input, input);
+            }
+        }
+        app.docs[0].input = "([)]".into();
+        app.json_action(Action::Lint);
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.json_ui(ui));
+        });
+        assert_eq!(
+            output
+                .shapes
+                .iter()
+                .filter(|shape| matches!(
+                    &shape.shape, egui::Shape::Text(text)
+                        if text.galley.job.text == app.docs[0].message
+                ))
+                .count(),
+            1,
+            "the action notice already displays the delimiter error"
+        );
     }
 
     #[test]

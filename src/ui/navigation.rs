@@ -11,13 +11,15 @@ pub(super) enum Tool {
     Cryptographic,
     Keygen,
     Base64,
+    TextDiff,
 }
 impl Tool {
-    pub(super) const ALL: [Self; 10] = [
+    pub(super) const ALL: [Self; 11] = [
         Self::Json,
         Self::Sql,
         Self::Xml,
         Self::Regex,
+        Self::TextDiff,
         Self::Password,
         Self::Qr,
         Self::Pdf,
@@ -37,6 +39,7 @@ impl Tool {
             Self::Cryptographic => "Cryptographic",
             Self::Keygen => "Keygen",
             Self::Base64 => "Base64",
+            Self::TextDiff => "Text Diff",
         }
     }
     pub(super) fn description(self) -> &'static str {
@@ -51,6 +54,9 @@ impl Tool {
             Self::Cryptographic => "Hash, verify passwords, encrypt and decrypt text locally.",
             Self::Keygen => "Generate RSA, age and AES keys locally.",
             Self::Base64 => "Encode, decode and generate Base64 encryption keys.",
+            Self::TextDiff => {
+                "Compare text lines with additions on the left and removals on the right."
+            }
         }
     }
     pub(super) fn icon(self) -> &'static str {
@@ -65,6 +71,7 @@ impl Tool {
             Self::Cryptographic => icons::LOCK_KEY,
             Self::Keygen => icons::KEY,
             Self::Base64 => icons::CODE,
+            Self::TextDiff => icons::GIT_DIFF,
         }
     }
     pub(super) fn lang(self) -> Option<Language> {

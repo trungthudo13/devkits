@@ -33,6 +33,7 @@ impl DevKits {
                             Tool::Cryptographic => self.cryptographic.ui(ui),
                             Tool::Keygen => self.keygen.ui(ui),
                             Tool::Base64 => self.base64.ui(ui),
+                            Tool::TextDiff => self.text_diff.ui(ui),
                         }
                     });
             });
@@ -114,6 +115,8 @@ mod tests {
                     "RSA".to_owned()
                 } else if tool == Tool::Base64 {
                     "Generate key".to_owned()
+                } else if tool == Tool::TextDiff {
+                    "Compare".to_owned()
                 } else {
                     tool.title().to_owned()
                 };
